@@ -30,19 +30,38 @@ class PhoneAndroidShellTest {
         var capturedLive: (() -> Boolean)? = null
         val asks = mutableListOf<ConfirmRequest>()
         val statuses = mutableListOf<String?>()
-        val executor = PhoneShellExecutor { ownerId, command, timeoutMs, stillWanted, confirm ->
-            executorCalls++
-            capturedOwner = ownerId
-            capturedCommand = command
-            capturedTimeout = timeoutMs
-            capturedLive = stillWanted
-            beforeConfirm()
-            val decision = confirm(backend, uid)
-            afterConfirm()
-            val error = PhoneAndroidShell.confirmationError(decision)
-            if (!stillWanted()) PhoneAndroidShell.failure("cancelled")
-            else if (error != null) PhoneAndroidShell.failure(error)
-            else { dispatches++; result }
+        val executor = object : PhoneShellExecutor {
+            override fun execute(ownerId: Long, command: String, timeoutMs: Long, stillWanted: () -> Boolean,
+                                 confirm: (String, Int) -> Decision): Map<String, Any?> {
+                executorCalls++
+                capturedOwner = ownerId
+                capturedCommand = command
+                capturedTimeout = timeoutMs
+                capturedLive = stillWanted
+                beforeConfirm()
+                val decision = confirm(backend, uid)
+                afterConfirm()
+                val error = PhoneAndroidShell.confirmationError(decision)
+                return if (!stillWanted()) PhoneAndroidShell.failure("cancelled")
+                else if (error != null) PhoneAndroidShell.failure(error)
+                else { dispatches++; result }
+            }
+
+            override fun inspectRoot(ownerId: Long, operation: String, path: String, stillWanted: () -> Boolean,
+                                     confirm: (String, Int) -> Decision): Map<String, Any?> {
+                executorCalls++
+                capturedOwner = ownerId
+                capturedCommand = "$operation $path"
+                capturedTimeout = 10_000L
+                capturedLive = stillWanted
+                beforeConfirm()
+                val decision = confirm(backend, uid)
+                afterConfirm()
+                val error = PhoneAndroidShell.confirmationError(decision)
+                return if (!stillWanted()) PhoneAndroidShell.failure("cancelled")
+                else if (error != null) PhoneAndroidShell.failure(error)
+                else { dispatches++; result }
+            }
         }
         val env = object : PhoneEnv {
             override fun enabled() = this@Fixture.enabled
@@ -241,11 +260,12 @@ class PhoneAndroidShellTest {
     }
 
     @Test fun backendAndActualUidMustBeRecognizedBeforeAsking() {
-        for ((backend, uid) in listOf("adb" to 2000, "shizuku" to 0, "shizuku" to 2000,
-                "adb" to 0, "adb" to 10000, "shizuku" to -1, "unknown" to 0)) Fixture().use { f ->
+        for ((backend, uid) in listOf("adb" to 2000, "shizuku" to 0, "shizuku" to 2000, "root" to 0,
+                "root" to 2000, "adb" to 0, "adb" to 10000, "shizuku" to -1, "unknown" to 0)) Fixture().use { f ->
             f.backend = backend
             f.uid = uid
-            val valid = (backend == "adb" && uid == 2000) || (backend == "shizuku" && uid in setOf(0, 2000))
+            val valid = (backend == "adb" && uid == 2000) ||
+                (backend == "shizuku" && uid in setOf(0, 2000)) || (backend == "root" && uid == 0)
             assertEquals(!valid, f.call().isError)
             assertEquals(if (valid) 1 else 0, f.asks.size)
             assertEquals(if (valid) 1 else 0, f.dispatches)
@@ -333,6 +353,75 @@ class PhoneAndroidShellTest {
         Fixture().use { f ->
             f.result = receipt() + mapOf("exitCode" to 0L, "truncated" to true)
             assertFalse(f.call().isError)
+        }
+    }
+
+    @Test fun rootBackendRequiresVerifiedUidZeroAndStillPromptsForEachCommand() {
+        Fixture().use { f ->
+            f.backend = "root"
+            f.uid = 0
+            f.result = receipt() + mapOf("backend" to "root", "uid" to 0)
+            assertFalse(f.call("id").isError)
+            assertTrue(f.asks.single().sentence.contains("root"))
+            assertTrue(f.asks.single().sentence.contains("UID 0"))
+            assertEquals(1, f.dispatches)
+        }
+    }
+
+    @Test fun rootBackendNeverDispatchesWhenItsConnectedUidIsNotZero() {
+        Fixture().use { f ->
+            f.backend = "root"
+            f.uid = 2000
+            assertTrue(f.call("id").isError)
+            assertEquals(0, f.dispatches)
+        }
+    }
+
+    @Test fun rootDeviceInfoRequiresActualUidZeroAndIndependentConfirmation() {
+        for ((backend, uid) in listOf("shizuku" to 0, "root" to 2000, "root" to 0)) Fixture().use { f ->
+            f.backend = backend
+            f.uid = uid
+            f.result = receipt() + mapOf("backend" to backend, "uid" to uid, "stdout" to "mode 755 /system/bin")
+            val request = checkNotNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "metadata", "path" to "/system/bin"))))
+            val owner = (f.tasks.begin() as PhoneTasks.Begin.Go).owner
+            val result = PhoneAndroidShell.inspectRoot(request, owner, f.tasks, SerialWorker.Scope(), f.executor,
+                f.env::enabled, f.env::isLocked, f.env::gate, PhoneUiText.DEFAULT)
+            assertEquals(if (backend == "root" && uid == 0) 1 else 0, f.dispatches)
+            assertEquals(if (backend == "root" && uid == 0) 1 else 0, f.asks.size)
+            if (f.asks.isNotEmpty()) {
+                assertTrue(f.asks.single().sentence.contains("Root"))
+                assertTrue(f.asks.single().sentence.contains("只读检查"))
+                assertTrue(f.asks.single().sentence.contains("UID 0"))
+                val second = PhoneAndroidShell.inspectRoot(request, owner, f.tasks, SerialWorker.Scope(), f.executor,
+                    f.env::enabled, f.env::isLocked, f.env::gate, PhoneUiText.DEFAULT)
+                assertNull(second["errorCode"])
+                assertEquals(2, f.asks.size)
+                assertEquals(2, f.dispatches)
+            }
+        }
+    }
+
+    @Test fun rootDeviceInfoNeverFallsBackToShellOrAPathOutsideFixedPartitions() {
+        Fixture().use { f ->
+            f.backend = "shizuku"
+            f.uid = 2000
+            val request = checkNotNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "list", "path" to "/system/bin"))))
+            val owner = (f.tasks.begin() as PhoneTasks.Begin.Go).owner
+            val result = PhoneAndroidShell.inspectRoot(request, owner, f.tasks, SerialWorker.Scope(), f.executor,
+                f.env::enabled, f.env::isLocked, f.env::gate, PhoneUiText.DEFAULT)
+            assertEquals(0, f.dispatches)
+            assertEquals(0, f.asks.size)
+        }
+        Fixture().use { f ->
+            val request = checkNotNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "list", "path" to "/system/bin"))))
+            f.backend = "root"
+            f.uid = 0
+            f.decision = Decision.DENY
+            val owner = (f.tasks.begin() as PhoneTasks.Begin.Go).owner
+            PhoneAndroidShell.inspectRoot(request, owner, f.tasks, SerialWorker.Scope(), f.executor,
+                f.env::enabled, f.env::isLocked, f.env::gate, PhoneUiText.DEFAULT)
+            assertEquals(0, f.dispatches)
+            assertEquals(1, f.asks.size)
         }
     }
 
