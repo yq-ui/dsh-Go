@@ -8,6 +8,8 @@ internal object RootShellCommand {
         "/debug_ramdisk/su",       // Magisk
         "/sbin/su",                // legacy Magisk
         "/su/bin/su",              // SuperSU
+        "/system/xbin/su",         // older ROMs
+        "/data/adb/magisk/su",     // Magisk payload
         "/data/adb/ksu/bin/su",    // KernelSU (direct)
         "su",                      // PATH
     )
