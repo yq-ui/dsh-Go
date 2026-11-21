@@ -1,6 +1,11 @@
 name: Build debug APK
 on:
   workflow_dispatch:
+    inputs:
+      runtime:
+        description: "Build the bundled runtime (false = UI-only fast build)"
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
@@ -17,10 +22,31 @@ jobs:
         with:
           flutter-version: '3.47.7'
           channel: stable
+          cache: true
+      - name: cache gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('app/android/**/*.gradle*', 'app/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+      - name: cache runtime inputs
+        uses: actions/cache@v4
+        with:
+          path: runtime/.cache
+          key: runtime-inputs-r15-dsh0.2.2-rc.1
+      - name: cache built runtime
+        if: ${{ inputs.runtime }}
+        uses: actions/cache@v4
+        with:
+          path: runtime/out
+          key: runtime-out-${{ hashFiles('runtime/build-runtime.sh', 'runtime/lib/**', 'runtime/patches/**', 'runtime/locks/**') }}
       - name: pub get
         working-directory: app
         run: flutter pub get
       - name: build bundled runtime (arm64)
+        if: ${{ inputs.runtime }}
         run: bash runtime/build-runtime.sh arm64-v8a
       - name: build side debug arm64
         working-directory: app
