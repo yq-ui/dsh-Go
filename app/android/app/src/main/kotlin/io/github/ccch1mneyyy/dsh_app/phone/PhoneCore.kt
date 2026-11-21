@@ -372,6 +372,7 @@ class PhoneCore(
             if (call.replay != null) return replay(call, scope, owner)
             return when (name) {
                 PhoneToolCatalog.ANDROID_SHELL -> androidShell(a, scope, owner)
+                PhoneToolCatalog.ROOT_DEVICE_INFO -> rootDeviceInfo(a, scope, owner)
                 PhoneToolCatalog.APPS -> apps(a, owner)
                 PhoneToolCatalog.OPEN -> open(call, scope, owner)
                 PhoneToolCatalog.INTENT -> intent(call, scope, owner)
@@ -413,6 +414,35 @@ class PhoneCore(
     }
 
     // ── System actions ──────────────────────────────────────────────────────────────
+
+
+
+
+    private fun rootDeviceInfo(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
+        val request = RootDeviceInfoTool.parse(a)
+            ?: return Out("root_device_info 需要 operation=list|metadata 与系统分区 path；拒绝路径遍历和额外字段。", error = true,
+                summary = PhoneToolCatalog.ROOT_DEVICE_INFO, decision = "refused:arguments")
+        val executor = env.androidShell() ?: return Out(Json.write(PhoneAndroidShell.failure("unsupported")),
+            error = true, summary = PhoneToolCatalog.ROOT_DEVICE_INFO, decision = "unsupported")
+        skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
+        val response = PhoneAndroidShell.inspectRoot(request, owner, tasks, scope, executor,
+            env::enabled, env::isLocked, env::gate, ui)
+        val exit = response["exitCode"]
+        val success = response["started"] == true && response["errorCode"] == null &&
+            (exit == 0 || exit == 0L) && response["timedOut"] != true && response["cancelled"] != true
+        val output = buildString {
+            append("operation=").append(request.operation).append("\npath=").append(request.path)
+            append("\nbackend=").append(response["backend"] ?: "unknown")
+            append("\nuid=").append(response["uid"] ?: "unknown")
+            append("\nexitCode=").append(exit ?: "unknown")
+            (response["stdout"] as? String)?.takeIf { it.isNotEmpty() }?.let { append("\nstdout:\n").append(it) }
+            (response["stderr"] as? String)?.takeIf { it.isNotEmpty() }?.let { append("\nstderr:\n").append(it) }
+            (response["errorCode"] as? String)?.let { append("\nerrorCode=").append(it) }
+            if (response["truncated"] == true) append("\ntruncated=true")
+        }
+        return Out(output, error = !success, summary = "Root device info · " + request.operation,
+            decision = (response["errorCode"] as? String) ?: if (success) "ok" else "failed")
+    }
 
     private fun apps(a: Args, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("apps")
