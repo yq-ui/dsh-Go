@@ -31,9 +31,11 @@ class AndroidShellController(context: Context, private val onChanged: () -> Unit
 
     fun status(): Map<String, Any?> {
         val config = synchronized(guard) { enabled to backend }
-        val shizukuStatus = shizuku.status()
-        val adbStatus = adb.status()
-        val rootStatus = root.status()
+        // Only probe the selected backend: a Shizuku binder call can block for seconds when
+        // Shizuku is not installed/running, which used to freeze the whole settings page.
+        val shizukuStatus = if (config.second == "shizuku") shizuku.status() else emptyMap<String, Any?>()
+        val adbStatus = if (config.second == "adb") adb.status() else emptyMap<String, Any?>()
+        val rootStatus = if (config.second == "root") root.status() else mapOf("connected" to false)
         val link = readyLink?.takeIf { it.backend == config.second && it.alive() &&
             (config.second != "shizuku" || shizukuStatus["granted"] == true) &&
             (config.second != "root" || it.uid == 0) }
