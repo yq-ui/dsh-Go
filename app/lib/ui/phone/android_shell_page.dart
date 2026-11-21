@@ -7,9 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../phone/android_shell_channel.dart';
 import '../../state/phone_state.dart';
-import '../common/app_dialog.dart';
 import '../common/list_page_row.dart';
-import '../common/risk_notice.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'phone_widgets.dart';
@@ -18,10 +16,7 @@ String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'disabled' => l10n.androidShellErrorDisabled,
   'stopped' => l10n.androidShellErrorStopped,
   'notConnected' => l10n.androidShellErrorNotConnected,
-  'shizukuMissing' => l10n.androidShellErrorShizukuMissing,
-  'shizukuStopped' => l10n.androidShellErrorShizukuStopped,
   'permissionRequired' => l10n.androidShellErrorPermissionRequired,
-  'adbNotPaired' => l10n.androidShellErrorAdbNotPaired,
   'rootStartFailed' => AppLocale.isEnglish
       ? 'Root backend did not start. Check that a root manager is available and retry.'
       : 'Root 后端未能启动；检查 root 管理器是否可用后重试。',
@@ -125,43 +120,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
   Future<void> _toggle(bool enabled) =>
       _run(() => _channel.configure(enabled: enabled, backend: _status.backend));
 
-  /// Selecting a backend must stay possible even if a previous call wedged the busy flag.
-  Future<void> _selectBackend(AndroidShellBackend backend) async {
-    if (_loading || !_status.supported) return;
-    setState(() {
-      _errorCode = null;
-      _busy = true;
-    });
-    try {
-      final result = await _channel
-          .configure(enabled: _status.enabled, backend: backend)
-          .timeout(const Duration(seconds: 20));
-      if (!mounted) return;
-      setState(() => _errorCode = result.ok ? null : result.errorCode ?? 'invalidResponse');
-    } on TimeoutException {
-      if (mounted) setState(() => _errorCode = 'timeout');
-    } catch (_) {
-      if (mounted) setState(() => _errorCode = 'invalidResponse');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-      await _refresh();
-    }
-  }
-
-  Future<void> _authorize() =>
-      _run(() async => AndroidShellResult(await _channel.requestPermission(), errorCode: 'permissionRequired'));
-
-  Future<void> _adbInput({required bool pairing}) async {
-    if (_busy || _stopping) return;
-    final input = await showAppDialog<_AdbInput>(
-      context: context,
-      builder: (_) => _AdbInputDialog(pairing: pairing),
-    );
-    if (input == null || !mounted) return;
-    await _run(() => pairing ? _channel.pair(input.code!, port: input.port) : _channel.connect(port: input.port));
-  }
-
-  /// Stop remains available while a pairing/connection request is pending.
+  /// Stop remains available while a connection request is pending.
   Future<void> _stop() async {
     if (_stopping) return;
     final operation = ++_operation;
@@ -194,38 +153,6 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     final reasonCode = _status.reasonCode;
     final timeout = _status.limits['maxTimeoutMs'];
     final output = _status.limits['maxOutputBytes'];
-    final shizuku = _status.backend == AndroidShellBackend.shizuku;
-    final root = _status.backend == AndroidShellBackend.root;
-    final backendName = shizuku
-        ? 'Shizuku'
-        : root
-            ? 'Root (su)'
-            : l10n.androidShellAdb;
-    final authorize = ListPageRow(
-      key: const ValueKey('android-shell-authorize'),
-      title: l10n.androidShellAuthorize,
-      titleMaxLines: 2,
-      subtitle: !_status.shizuku.installed
-          ? l10n.androidShellErrorShizukuMissing
-          : !_status.shizuku.running
-          ? l10n.androidShellErrorShizukuStopped
-          : null,
-      subtitleMaxLines: 3,
-      onTap: canSetup ? () => unawaited(_authorize()) : null,
-    );
-    final pairing = [
-      ListPageRow(
-        key: const ValueKey('android-shell-start-pairing'),
-        title: l10n.androidShellStartPairing,
-        titleMaxLines: 2,
-        onTap: canSetup ? () => unawaited(_run(_channel.startPairing)) : null,
-      ),
-      ListPageRow(
-        key: const ValueKey('android-shell-pair'),
-        title: l10n.androidShellPair,
-        onTap: canSetup ? () => unawaited(_adbInput(pairing: true)) : null,
-      ),
-    ];
     return AppPage.list(
       title: l10n.androidShellTitle,
       children: [
@@ -273,23 +200,12 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
           margin: _margin,
           title: l10n.androidShellBackend,
           children: [
-            for (final backend in const [AndroidShellBackend.root])
-              Semantics(
-                selected: _status.backend == backend,
-                inMutuallyExclusiveGroup: true,
-                child: ListPageRow(
-                  key: ValueKey('android-shell-backend-${backend.name}'),
-                  leading: Icon(_status.backend == backend ? AppIcons.radioOn : AppIcons.radioOff),
-                  title: switch (backend) {
-                    AndroidShellBackend.shizuku => 'Shizuku',
-                    AndroidShellBackend.adb => l10n.androidShellAdb,
-                    AndroidShellBackend.root => 'Root (su)',
-                  },
-                  onTap: _loading || !_status.supported || _status.backend == backend
-                      ? null
-                      : () => unawaited(_selectBackend(backend)),
-                ),
-              ),
+            ListPageRow(
+              key: const ValueKey('android-shell-backend-root'),
+              leading: const Icon(AppIcons.radioOn),
+              title: 'Root (su)',
+              titleMaxLines: 2,
+            ),
           ],
         ),
         if (!_status.ready)
@@ -298,16 +214,10 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
             children: [
               ListPageRow(
                 key: ValueKey('android-shell-connect-${_status.backend.name}'),
-                title: shizuku
-                    ? l10n.androidShellConnectChannel
-                    : root
-                        ? (AppLocale.isEnglish ? 'Connect Root Shell' : '连接 Root Shell')
-                        : l10n.androidShellConnect,
+                title: AppLocale.isEnglish ? 'Connect Root Shell' : '连接 Root Shell',
                 titleMaxLines: 2,
                 subtitle: !_status.enabled ? l10n.androidShellErrorDisabled : null,
-                onTap: canSetup && _status.enabled
-                    ? () => unawaited((shizuku || root) ? _run(_channel.connect) : _adbInput(pairing: false))
-                    : null,
+                onTap: canSetup && _status.enabled ? () => unawaited(_run(_channel.connect)) : null,
               ),
             ],
           ),
@@ -330,13 +240,9 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
           children: [
             PhoneNote(text: l10n.androidShellSubtitle),
             PhoneNote(text: l10n.androidShellEnableHint),
-            PhoneNote(text: shizuku
-                ? l10n.androidShellShizukuHint
-                : root
-                    ? (AppLocale.isEnglish
-                        ? 'The root manager will request access on connect. DSH verifies the actual UID is 0. Commands still require individual confirmation. The Linux guest and Android host are separate environments.'
-                        : '连接时由 root 管理器弹窗授权；连接成功后会校验实际 UID=0。命令仍需逐条确认。Linux guest 与 Android 主机是不同执行环境。')
-                    : l10n.androidShellAdbHint),
+            PhoneNote(text: AppLocale.isEnglish
+                ? 'The root manager will request access on connect. DSH verifies the actual UID is 0. Commands still require individual confirmation. The Linux guest and Android host are separate environments.'
+                : '连接时由 root 管理器弹窗授权；连接成功后会校验实际 UID=0。命令仍需逐条确认。Linux guest 与 Android 主机是不同执行环境。'),
             ListPageCard(
               margin: _margin,
               children: [
@@ -354,25 +260,13 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                     titleMaxLines: 3,
                   ),
                 if (_errorCode case final code?) ListPageRow(title: l10n.androidShellErrorCode(code), titleMaxLines: 3),
-                if (shizuku) ...[
-                  _fact(l10n.androidShellInstalled, _status.shizuku.installed),
-                  _fact(l10n.androidShellRunning, _status.shizuku.running),
-                  _fact(l10n.androidShellGranted, _status.shizuku.granted),
-                  if (_status.shizuku.granted) authorize,
-                ] else if (root) ...[
-                  _fact('su 通道已连接', _status.ready && _status.uid == 0),
-                  ListPageRow(title: '后端', value: backendName),
-                  if (_status.rootSu != null) ListPageRow(title: 'su 路径', value: _status.rootSu!, titleMaxLines: 2),
-                  if (_status.rootError != null)
-                    ListPageRow(title: '最近一次失败', value: _status.rootError!, titleMaxLines: 5),
-                ] else ...[
-                  _fact(l10n.androidShellPaired, _status.adb.paired),
-                  _fact(l10n.androidShellConnected, _status.adb.connected),
-                  if (_status.adb.paired) ...pairing,
-                ],
+                _fact('su 通道已连接', _status.ready && _status.uid == 0),
+                ListPageRow(title: '后端', value: 'Root (su)'),
+                if (_status.rootSu != null) ListPageRow(title: 'su 路径', value: _status.rootSu!, titleMaxLines: 2),
+                if (_status.rootError != null)
+                  ListPageRow(title: '最近一次失败', value: _status.rootError!, titleMaxLines: 5),
               ],
             ),
-            if (!root) PhoneNote(text: shizuku ? l10n.androidShellAuthorizeHint : l10n.androidShellPairingGuide),
             PhoneNote(text: l10n.androidShellStopHint),
           ],
         ),
@@ -385,101 +279,4 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     titleMaxLines: 2,
     value: ready ? context.l10n.phoneReady : context.l10n.phoneNotReadyYet,
   );
-}
-
-class _AdbInput {
-  const _AdbInput({this.code, this.port});
-
-  final String? code;
-  final int? port;
-}
-
-/// Pairing and connection use separate short-lived forms and port controllers.
-class _AdbInputDialog extends StatefulWidget {
-  const _AdbInputDialog({required this.pairing});
-
-  final bool pairing;
-
-  @override
-  State<_AdbInputDialog> createState() => _AdbInputDialogState();
-}
-
-class _AdbInputDialogState extends State<_AdbInputDialog> {
-  final _code = TextEditingController();
-  final _port = TextEditingController();
-
-  @override
-  void dispose() {
-    _code.clear();
-    _code.dispose();
-    _port.dispose();
-    super.dispose();
-  }
-
-  _AdbInput? _readInput() {
-    final portText = _port.text.trim();
-    final port = int.tryParse(portText);
-    if (portText.isNotEmpty && (port == null || port < 1 || port > 65535)) return null;
-    if (widget.pairing && !RegExp(r'^[0-9]{6}$').hasMatch(_code.text)) return null;
-    return _AdbInput(code: widget.pairing ? _code.text : null, port: port);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return AlertDialog(
-      title: Text(widget.pairing ? l10n.androidShellPair : l10n.androidShellConnect),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(widget.pairing ? l10n.androidShellPairPortHint : l10n.androidShellConnectPortHint),
-            if (widget.pairing)
-              TextField(
-                key: const ValueKey('android-shell-pair-code'),
-                controller: _code,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                enableIMEPersonalizedLearning: false,
-                maxLength: 6,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: InputDecoration(labelText: l10n.androidShellPairCode),
-                onChanged: (_) => setState(() {}),
-              ),
-            TextField(
-              key: ValueKey(widget.pairing ? 'android-shell-pair-port' : 'android-shell-connect-port'),
-              controller: _port,
-              autofocus: !widget.pairing,
-              keyboardType: TextInputType.number,
-              maxLength: 5,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: widget.pairing ? l10n.androidShellPairPort : l10n.androidShellConnectPort,
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.commonCancel)),
-        FilledButton(
-          key: const ValueKey('android-shell-adb-submit'),
-          onPressed: _readInput() == null
-              ? null
-              : () {
-                  // Input may change after this button was built but before the next frame.
-                  final input = _readInput();
-                  if (input == null) return;
-                  _code.clear();
-                  Navigator.pop(context, input);
-                },
-          child: Text(widget.pairing ? l10n.androidShellPairSubmit : l10n.androidShellConnect),
-        ),
-      ],
-    );
-  }
 }
