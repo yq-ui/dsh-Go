@@ -1007,8 +1007,18 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     override fun system(): SystemApi = system
 
-    override fun androidShell(): PhoneShellExecutor = PhoneShellExecutor { ownerId, command, timeoutMs, live, confirm ->
-        shell.execute(ownerId, command, timeoutMs, live, confirm)
+    override fun androidShell(): PhoneShellExecutor = object : PhoneShellExecutor {
+        override fun execute(ownerId: Long, command: String, timeoutMs: Long, stillWanted: () -> Boolean,
+                             confirm: (String, Int) -> Decision): Map<String, Any?> =
+            shell.execute(ownerId, command, timeoutMs, stillWanted, confirm)
+
+        override fun executeRoot(ownerId: Long, command: String, timeoutMs: Long, stillWanted: () -> Boolean,
+                                 confirm: (String, Int) -> Decision): Map<String, Any?> =
+            shell.executeRoot(ownerId, command, timeoutMs, stillWanted, confirm)
+
+        override fun inspectRoot(ownerId: Long, operation: String, path: String, stillWanted: () -> Boolean,
+                                 confirm: (String, Int) -> Decision): Map<String, Any?> =
+            shell.inspectRoot(ownerId, operation, path, stillWanted, confirm)
     }
 
     override fun zone(): ZoneId = ZoneId.systemDefault()
