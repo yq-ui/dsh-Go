@@ -32,7 +32,9 @@ String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'identityChanged' => l10n.androidShellErrorIdentityChanged,
   'helperStartFailed' => l10n.androidShellErrorHelperStartFailed,
   'busy' => l10n.androidShellErrorBusy,
-  'invalidArguments' => l10n.androidShellErrorInvalidArguments,
+  'invalidArguments' => AppLocale.isEnglish
+      ? 'The request was rejected; try again.'
+      : '请求参数无效，请重试。',
   'cancelled' => l10n.androidShellErrorCancelled,
   'timeout' => l10n.androidShellErrorTimeout,
   'confirmationDenied' => l10n.androidShellErrorConfirmationDenied,
@@ -135,7 +137,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
       );
       if (!accepted || !mounted) return const AndroidShellResult(true);
       final phone = ref.read(phoneProvider);
-      if (!phone.loaded || !phone.status.ready || !phone.status.enabled) {
+      if (!phone.loaded) {
         return const AndroidShellResult(false, errorCode: 'disabled');
       }
     }
@@ -206,7 +208,8 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     final l10n = context.l10n;
     final phone = ref.watch(phoneProvider);
     final canSetup = !_loading && _status.supported && !_busy && !_stopping;
-    final canEnable = canSetup && phone.loaded && phone.status.ready && phone.status.enabled;
+    // Android Shell is independent of screen-control/accessibility readiness.
+    final canEnable = canSetup && phone.loaded;
     final reasonCode = _status.reasonCode;
     final timeout = _status.limits['maxTimeoutMs'];
     final output = _status.limits['maxOutputBytes'];
@@ -247,6 +250,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
       children: [
         PhoneNote(tone: NoteTone.warn, text: l10n.androidShellConfirmationNote),
         if (!phone.status.enabled) PhoneNote(text: l10n.androidShellMasterOff),
+        if (!phone.loaded) PhoneNote(text: l10n.phoneNotReadyYet),
         ListPageCard(
           margin: _margin,
           children: [
