@@ -88,7 +88,14 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
 
   Future<void> _refresh() async {
     final read = ++_read;
-    final status = await _channel.status();
+    AndroidShellStatus status;
+    try {
+      status = await _channel.status().timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // A wedged native status call must not leave every row disabled forever.
+      if (mounted && read == _read && _loading) setState(() => _loading = false);
+      return;
+    }
     if (!mounted || read != _read) return;
     setState(() {
       _status = status;
