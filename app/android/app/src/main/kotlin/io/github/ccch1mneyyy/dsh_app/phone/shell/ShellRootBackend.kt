@@ -43,12 +43,17 @@ internal class ShellRootBackend(private val context: Context, private val onChan
         var published = false
         val errors = StringBuilder()
         var startedAny = false
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(90)
         return try {
             if (!wanted()) return ShellConnection(errorCode = "cancelled")
             val app = context.applicationInfo
             val classpath = (listOf(app.sourceDir) + app.splitSourceDirs.orEmpty()).joinToString(":")
             for (su in RootShellCommand.candidates) {
                 if (!wanted()) return ShellConnection(errorCode = "cancelled")
+                if (System.nanoTime() > deadline) {
+                    errors.append("deadline; ")
+                    break
+                }
                 val argv = RootShellCommand.appProcess(classpath, AndroidShellMain::class.java.name, su) ?: continue
                 val process = try {
                     ProcessBuilder(argv).start()
@@ -75,7 +80,10 @@ internal class ShellRootBackend(private val context: Context, private val onChan
                     }
                 }
                 val link = ShellLink.root(process)
-                val probed = runCatching { link.probe(ROOT_AUTH_TIMEOUT_MS) }.getOrDefault(false)
+                // Root managers answer immediately when already authorized; a long per-candidate
+                // wait would multiply into minutes across the fallback list.
+                val probed = runCatching { link.probe(ROOT_PROBE_TIMEOUT_MS) }.getOrDefault(false)
+                if (!probed) Thread.sleep(200)
                 if (probed && link.uid == 0) {
                     synchronized(guard) {
                         if (generation != ticket || !wanted()) {
@@ -131,6 +139,6 @@ internal class ShellRootBackend(private val context: Context, private val onChan
     }
 
     private companion object {
-        const val ROOT_AUTH_TIMEOUT_MS = 120_000L
+        const val ROOT_PROBE_TIMEOUT_MS = 20_000L
     }
 }
