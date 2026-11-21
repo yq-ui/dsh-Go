@@ -10,10 +10,16 @@ internal class ShellRootBackend(private val context: Context, private val onChan
     private var busy = false
     @Volatile private var channel: ShellLink? = null
     @Volatile private var pending: Process? = null
+    @Volatile private var lastError: String? = null
+    @Volatile private var lastSu: String? = null
 
     fun status(): Map<String, Any?> {
         val live = verifiedLink()
-        return mapOf("connected" to (live != null))
+        return mapOf(
+            "connected" to (live != null),
+            "su" to lastSu,
+            "error" to lastError,
+        )
     }
 
     fun verifiedLink(): ShellLink? {
@@ -33,43 +39,74 @@ internal class ShellRootBackend(private val context: Context, private val onChan
             busy = true
             ++generation
         }
-        var candidate: ShellLink? = null
         var pendingProcess: Process? = null
         var published = false
+        val errors = StringBuilder()
+        var startedAny = false
         return try {
             if (!wanted()) return ShellConnection(errorCode = "cancelled")
             val app = context.applicationInfo
             val classpath = (listOf(app.sourceDir) + app.splitSourceDirs.orEmpty()).joinToString(":")
-            val argv = RootShellCommand.appProcess(classpath, AndroidShellMain::class.java.name)
-                ?: return ShellConnection(errorCode = "invalidArguments")
-            val process = ProcessBuilder(argv).start()
-            pendingProcess = process
-            val admitted = synchronized(guard) {
-                if (generation == ticket && wanted()) { pending = process; true } else false
+            for (su in RootShellCommand.candidates) {
+                if (!wanted()) return ShellConnection(errorCode = "cancelled")
+                val argv = RootShellCommand.appProcess(classpath, AndroidShellMain::class.java.name, su) ?: continue
+                val process = try {
+                    ProcessBuilder(argv).start()
+                } catch (error: Exception) {
+                    errors.append(su).append(" start:").append(error.message).append("; ")
+                    continue
+                }
+                startedAny = true
+                pendingProcess = process
+                synchronized(guard) { pending = process }
+                val stderr = StringBuilder()
+                thread(isDaemon = true, name = "dsh-root-shell-stderr") {
+                    runCatching {
+                        process.errorStream.use { input ->
+                            val buffer = ByteArray(1024)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                synchronized(stderr) {
+                                    if (stderr.length < 2048) stderr.append(String(buffer, 0, read))
+                                }
+                            }
+                        }
+                    }
+                }
+                val link = ShellLink.root(process)
+                val probed = runCatching { link.probe(ROOT_AUTH_TIMEOUT_MS) }.getOrDefault(false)
+                if (probed && link.uid == 0) {
+                    synchronized(guard) {
+                        if (generation != ticket || !wanted()) {
+                            link.close()
+                            return ShellConnection(errorCode = "cancelled")
+                        }
+                        pending = null
+                        channel = link
+                        published = true
+                    }
+                    lastSu = su
+                    lastError = null
+                    return ShellConnection(link)
+                }
+                val detail = synchronized(stderr) { stderr.toString().trim() }
+                errors.append(su).append(" uid=").append(link.uid)
+                if (detail.isNotEmpty()) errors.append(" stderr=").append(detail.take(300))
+                errors.append("; ")
+                runCatching { link.close() }
+                runCatching { process.destroyForcibly() }
+                pendingProcess = null
+                synchronized(guard) { if (pending === process) pending = null }
             }
-            if (!admitted) {
-                process.destroyForcibly()
-                return ShellConnection(errorCode = "cancelled")
-            }
-            if (!process.isAlive) return ShellConnection(errorCode = "rootStartFailed")
-            thread(isDaemon = true, name = "dsh-root-shell-stderr") {
-                runCatching { process.errorStream.use { input -> val buffer = ByteArray(4096); while (input.read(buffer) >= 0) Unit } }
-            }
-            val link = ShellLink.root(process)
-            candidate = link
-            if (!link.probe(ROOT_AUTH_TIMEOUT_MS) || link.uid != 0) return ShellConnection(errorCode = "rootIdentityMismatch")
-            synchronized(guard) {
-                if (generation != ticket || !wanted()) return ShellConnection(errorCode = "cancelled")
-                pending = null
-                channel = link
-                published = true
-            }
-            ShellConnection(link)
-        } catch (_: Exception) {
+            lastError = errors.toString().take(800).ifEmpty { "no su candidate started" }
+            ShellConnection(errorCode = if (startedAny) "rootIdentityMismatch" else "rootStartFailed")
+        } catch (error: Exception) {
+            lastError = "exception:" + (error.message ?: error.javaClass.simpleName)
             ShellConnection(errorCode = "rootStartFailed")
         } finally {
             if (!published) {
-                candidate?.close() ?: pendingProcess?.let { process -> runCatching { process.destroyForcibly() } }
+                pendingProcess?.let { process -> runCatching { process.destroyForcibly() } }
             }
             synchronized(guard) {
                 if (pending === pendingProcess) pending = null
@@ -92,8 +129,6 @@ internal class ShellRootBackend(private val context: Context, private val onChan
         closing.second?.let { process -> runCatching { process.destroyForcibly() } }
         onChanged()
     }
-
-    private fun quote(value: String): String = "'" + value.replace("'", "'\''") + "'"
 
     private companion object {
         const val ROOT_AUTH_TIMEOUT_MS = 120_000L
