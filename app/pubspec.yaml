@@ -153,6 +153,8 @@ flutter:
           weight: 700
 
   assets:
+    # Baked skills, native plugins and portable Cordis bundles (see BuiltinContent.kt).
+    - assets/builtin/
     - assets/licenses/streaming-asr-model-APACHE-2.0.txt
     # Full upstream WebRTC Android release notices, shown by LicenseRegistry.
     - assets/licenses/webrtc-150.7871.04.md
