@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 3
+    private const val VERSION = 4
     private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
@@ -65,6 +65,11 @@ internal object BuiltinContent {
                 if (!source.isDirectory) continue
                 applyDir(source, File(rootfs, to), managed = true)
                 treeCount++
+            }
+            // Zip entries carry no mode bits, so native helpers and CLIs are made runnable explicitly.
+            for (path in strings(manifest.optJSONArray("exec"))) {
+                if (path.contains("..") || path.startsWith("/")) continue
+                runCatching { File(rootfs, path).setExecutable(true, false) }
             }
             val cordis = manifest.optJSONArray("cordis") ?: JSONArray()
             val profile = File(home, "profiles/web")
@@ -177,6 +182,8 @@ internal object BuiltinContent {
                 copy(child, next)
             } else {
                 Files.copy(child.toPath(), next.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                // Zip extraction and Files.copy both drop the mode bit; a bundled CLI must stay runnable.
+                if (child.canExecute()) next.setExecutable(true, false)
             }
         }
     }
