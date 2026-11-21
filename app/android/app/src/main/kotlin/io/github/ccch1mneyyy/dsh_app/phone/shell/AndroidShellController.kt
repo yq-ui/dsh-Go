@@ -6,13 +6,14 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneAndroidShell
 import io.github.ccch1mneyyy.dsh_app.phone.RootDeviceInfoTool
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /** Opt-in shell capability, independent of screen-control configuration and confirmation modes. */
 class AndroidShellController(context: Context, private val onChanged: () -> Unit = {}) {
     private val context = context.applicationContext
     private val preferences = this.context.getSharedPreferences("android-shell-v1", Context.MODE_PRIVATE)
     private val guard = Any()
-    private var enabled = preferences.getBoolean("enabled", false)
+    private var enabled = preferences.getBoolean("enabled", true)
     // Root-only build: Shizuku/ADB backends are intentionally disabled.
     private var backend = "root"
     private var generation = 0L
@@ -22,6 +23,20 @@ class AndroidShellController(context: Context, private val onChanged: () -> Unit
     private val adb = ShellAdbBackend(this.context, onChanged)
     private val shizuku = ShellShizukuBackend(this.context, onChanged)
     private val root = ShellRootBackend(this.context, onChanged)
+
+    init {
+        // "Everything on by default": migrate once, then connect in the background so the
+        // person does not have to flip switches before the first root command.
+        if (!preferences.getBoolean("rootDefaultOnApplied", false)) {
+            enabled = true
+            preferences.edit()
+                .putBoolean("enabled", true)
+                .putString("backend", "root")
+                .putBoolean("rootDefaultOnApplied", true)
+                .apply()
+        }
+        if (enabled) thread(isDaemon = true, name = "dsh-root-autoconnect") { runCatching { connect() } }
+    }
 
     private class Lease(val ownerId: Long, val generation: Long, val backend: String) {
         val id = UUID.randomUUID().toString()
