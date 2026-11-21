@@ -17,8 +17,8 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 2
-    private const val MAX_TOTAL = 64L * 1024 * 1024
+    private const val VERSION = 3
+    private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
 
@@ -54,6 +54,18 @@ internal object BuiltinContent {
                 Files.copy(source.toPath(), File(docs, name).toPath(), StandardCopyOption.REPLACE_EXISTING)
                 docCount++
             }
+            var treeCount = 0
+            val trees = manifest.optJSONArray("trees") ?: JSONArray()
+            for (i in 0 until trees.length()) {
+                val entry = trees.optJSONObject(i) ?: continue
+                val from = entry.optString("from").takeIf { it.isNotEmpty() } ?: continue
+                val to = entry.optString("to").takeIf { it.isNotEmpty() } ?: continue
+                if (to.contains("..")) continue
+                val source = File(staging, from)
+                if (!source.isDirectory) continue
+                applyDir(source, File(rootfs, to), managed = true)
+                treeCount++
+            }
             val cordis = manifest.optJSONArray("cordis") ?: JSONArray()
             val profile = File(home, "profiles/web")
             val modules = File(profile, "node_modules")
@@ -72,11 +84,11 @@ internal object BuiltinContent {
             if (packages.isNotEmpty()) registered = register(profile, packages)
             File(home, ".dsh-go-builtin.json").writeText(
                 JSONObject().put("v", VERSION).put("skills", manifest.optJSONArray("skills")?.length() ?: 0)
-                    .put("native", nativeCount).put("docs", docCount).put("cordis", packages.size)
-                    .put("bundles", registered).toString(),
+                    .put("native", nativeCount).put("docs", docCount).put("trees", treeCount)
+                    .put("cordis", packages.size).put("bundles", registered).toString(),
             )
             return "skills " + skillCount + ", native " + nativeCount + ", docs " + docCount +
-                ", cordis " + packages.size + ", bundles " + registered
+                ", trees " + treeCount + ", cordis " + packages.size + ", bundles " + registered
         } finally {
             staging.deleteRecursively()
         }
