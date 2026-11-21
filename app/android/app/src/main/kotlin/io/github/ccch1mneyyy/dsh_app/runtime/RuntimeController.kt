@@ -579,6 +579,16 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 if (!safe && !speechOverlay) {
                     log("[dsh-app] voice input overlay not written; the voice model keeps DSH's defaults", "system")
                 }
+                // Baked content: every skill, this App's native plugins and the portable Cordis bundles.
+                if (!safe) {
+                    try {
+                        BuiltinContent.install(app, installer.rootfs)?.let {
+                            log("[dsh-app] builtin content written: " + it, "system")
+                        }
+                    } catch (e: Exception) {
+                        log("[dsh-app] builtin content not written: " + e.message, "system")
+                    }
+                }
                 if (pendingPhoneStorage && !storage) log("[dsh-app] phone storage requested but permission not granted", "system")
                 val env = LinkedHashMap<String, String>()
                 env["TZ"] = java.util.TimeZone.getDefault().id
