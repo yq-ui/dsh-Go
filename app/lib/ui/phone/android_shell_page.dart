@@ -288,7 +288,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
           margin: _margin,
           title: l10n.androidShellBackend,
           children: [
-            for (final backend in AndroidShellBackend.values)
+            for (final backend in const [AndroidShellBackend.root])
               Semantics(
                 selected: _status.backend == backend,
                 inMutuallyExclusiveGroup: true,
@@ -307,11 +307,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
               ),
           ],
         ),
-        if (shizuku && !_status.shizuku.granted)
-          ListPageCard(margin: _margin, children: [authorize])
-        else if (!shizuku && !root && !_status.adb.paired)
-          ListPageCard(margin: _margin, children: pairing),
-        if (!_status.ready && (root || (shizuku ? _status.shizuku.granted : _status.adb.paired)))
+        if (!_status.ready)
           ListPageCard(
             margin: _margin,
             children: [
