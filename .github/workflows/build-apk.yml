@@ -14,6 +14,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: fetch builtin content
+        run: |
+          mkdir -p app/assets/builtin
+          curl -fsSL --retry 6 --retry-delay 3 -o app/assets/builtin/builtin.zip \
+            https://github.com/yq-ui/dsh-Go/releases/download/builtin-v3/builtin.zip
+          test -s app/assets/builtin/builtin.zip
+          ls -l app/assets/builtin/builtin.zip
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
