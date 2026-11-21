@@ -54,7 +54,7 @@ object PhoneAndroidShell {
         else -> "confirmationDenied"
     }
 
-    fun inspectRoot(request: RootDeviceInfoTool.Request, owner: PhoneTasks.Owner, tasks: PhoneTasks, scope: SerialWorker.Scope,
+    internal fun inspectRoot(request: RootDeviceInfoTool.Request, owner: PhoneTasks.Owner, tasks: PhoneTasks, scope: SerialWorker.Scope,
                    executor: PhoneShellExecutor?, enabled: () -> Boolean, locked: () -> Boolean,
                    gate: () -> UserGate?, ui: PhoneUiText): Map<String, Any?> {
         fun live() = tasks.isCurrent(owner) && !tasks.isPaused && enabled() && !locked() && !Thread.currentThread().isInterrupted
