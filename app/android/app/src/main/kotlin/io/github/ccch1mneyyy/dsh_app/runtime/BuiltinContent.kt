@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val MAX_TOTAL = 64L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
@@ -45,6 +45,15 @@ internal object BuiltinContent {
             for (name in strings(manifest.optJSONArray("native"))) {
                 if (applyDir(File(staging, "native/$name"), File(home, "dsh-go/plugins/$name"), managed = true)) nativeCount++
             }
+            var docCount = 0
+            val docs = File(home, "dsh-app/builtin-docs")
+            for (name in strings(manifest.optJSONArray("docs"))) {
+                val source = File(staging, "docs/$name")
+                if (!source.isFile) continue
+                if (!docs.isDirectory && !docs.mkdirs() && !docs.isDirectory) continue
+                Files.copy(source.toPath(), File(docs, name).toPath(), StandardCopyOption.REPLACE_EXISTING)
+                docCount++
+            }
             val cordis = manifest.optJSONArray("cordis") ?: JSONArray()
             val profile = File(home, "profiles/web")
             val modules = File(profile, "node_modules")
@@ -63,10 +72,11 @@ internal object BuiltinContent {
             if (packages.isNotEmpty()) registered = register(profile, packages)
             File(home, ".dsh-go-builtin.json").writeText(
                 JSONObject().put("v", VERSION).put("skills", manifest.optJSONArray("skills")?.length() ?: 0)
-                    .put("native", nativeCount).put("cordis", packages.size).put("bundles", registered).toString(),
+                    .put("native", nativeCount).put("docs", docCount).put("cordis", packages.size)
+                    .put("bundles", registered).toString(),
             )
-            return "skills " + skillCount + ", native " + nativeCount + ", cordis " + packages.size +
-                ", bundles " + registered
+            return "skills " + skillCount + ", native " + nativeCount + ", docs " + docCount +
+                ", cordis " + packages.size + ", bundles " + registered
         } finally {
             staging.deleteRecursively()
         }
