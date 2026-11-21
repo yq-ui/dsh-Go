@@ -9,11 +9,13 @@ int? _nonNegativeInt(Object? value) => value is int && value >= 0 ? value : null
 
 enum AndroidShellBackend {
   shizuku,
-  adb;
+  adb,
+  root;
 
   static AndroidShellBackend? parse(Object? value) => switch (value) {
     'shizuku' => shizuku,
     'adb' => adb,
+    'root' => root,
     _ => null,
   };
 }
@@ -53,6 +55,7 @@ class AndroidShellStatus {
     this.reasonCode,
     this.shizuku = const AndroidShellShizukuStatus(),
     this.adb = const AndroidShellAdbStatus(),
+    this.rootConnected = false,
     this.limits = const {},
   });
 
@@ -67,15 +70,21 @@ class AndroidShellStatus {
       return const AndroidShellStatus.unavailable('invalidResponse');
     }
     final limits = _map(value['limits']);
+    final enabled = value['enabled'] == true;
+    final uid = _nonNegativeInt(value['uid']);
+    final rootConnected = _map(value['root'])['connected'] == true;
+    final ready = enabled && value['ready'] == true &&
+        (backend != AndroidShellBackend.root || (uid == 0 && rootConnected));
     return AndroidShellStatus(
       supported: true,
-      enabled: value['enabled'] == true,
+      enabled: enabled,
       backend: backend,
-      ready: value['ready'] == true,
-      uid: _nonNegativeInt(value['uid']),
+      ready: ready,
+      uid: uid,
       reasonCode: _code(value['reasonCode']),
       shizuku: AndroidShellShizukuStatus.fromMap(_map(value['shizuku'])),
       adb: AndroidShellAdbStatus.fromMap(_map(value['adb'])),
+      rootConnected: rootConnected,
       limits: Map.unmodifiable({
         for (final key in const ['defaultTimeoutMs', 'maxTimeoutMs', 'maxOutputBytes', 'maxCommandBytes'])
           key: ?_nonNegativeInt(limits[key]),
@@ -91,6 +100,7 @@ class AndroidShellStatus {
   final String? reasonCode;
   final AndroidShellShizukuStatus shizuku;
   final AndroidShellAdbStatus adb;
+  final bool rootConnected;
   final Map<String, int> limits;
 }
 
