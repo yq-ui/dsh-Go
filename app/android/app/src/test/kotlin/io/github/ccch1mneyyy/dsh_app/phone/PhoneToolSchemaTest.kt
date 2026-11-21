@@ -65,7 +65,7 @@ class PhoneToolSchemaTest {
         val json = checkNotNull(server.handle(Json.write(mapOf("jsonrpc" to "2.0", "id" to 1, "method" to "tools/list"))))
         val listed = ((Json.parse(json) as Map<*, *>)["result"] as Map<*, *>)["tools"] as List<*>
         assertEquals(PhoneToolCatalog.listJson(), listed)
-        assertEquals(listOf("android_shell", "apps", "open", "intent", "notify", "clipboard", "screen", "collect", "tap", "type", "scroll", "key", "tap_xy", "handoff", "diagnostics"),
+        assertEquals(listOf("android_shell", "root_device_info", "apps", "open", "intent", "notify", "clipboard", "screen", "collect", "tap", "type", "scroll", "key", "tap_xy", "handoff", "diagnostics"),
             listed.map { (it as Map<*, *>)["name"] })
         for (tool in listed) {
             val schema = (tool as Map<*, *>)["inputSchema"] as Map<*, *>
@@ -73,7 +73,28 @@ class PhoneToolSchemaTest {
         }
         assertFalse(json.contains("\"minimum\""))
         assertFalse(json.contains("\"maximum\""))
-        assertEquals(15, PhoneToolCatalog.tools.size)
+        assertEquals(16, PhoneToolCatalog.tools.size)
+        val rootInfo = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.ROOT_DEVICE_INFO }
+        assertEquals(listOf("operation", "path"), rootInfo.properties.keys.toList())
+        assertEquals(listOf("operation", "path"), rootInfo.required)
+        assertEquals(listOf("list", "metadata"), (rootInfo.properties["operation"] as Map<*, *>)["enum"])
+        assertTrue(rootInfo.description.contains("用户已从 Android Shell 设置显式连接 Root"))
+        assertTrue(rootInfo.description.contains("本工具不会自行启动 su"))
+        assertTrue(rootInfo.description.contains("每次读取均需单独原生确认"))
+        val rootPath = rootInfo.properties["path"] as Map<*, *>
+        assertTrue((rootPath["description"] as String).contains("固定只读系统分区"))
+        val shell = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.ANDROID_SHELL }
+        val shellDescription = shell.description
+        assertTrue(shellDescription.contains("Root (su)"))
+        assertTrue(shellDescription.contains("UID=0"))
+        assertTrue(shellDescription.contains("PRoot"))
+        assertTrue(shellDescription.contains("PRoot 中的 UID 0 不等于主机 root"))
+        val key = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.KEY }
+        assertEquals(listOf("key", "screen"), key.properties.keys.toList())
+        assertEquals(listOf("back", "home", "recents", "notifications"), (key.properties["key"] as Map<*, *>)["enum"])
+        val tapElement = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.TAP }
+        assertEquals(listOf("screen", "id", "long"), tapElement.properties.keys.toList())
+        assertFalse(tapElement.properties.containsKey("resourceId"))
         val tap = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.TAP_XY }
         assertEquals(listOf("observation", "x", "y"), tap.required)
         assertEquals(listOf("observation", "x", "y", "action", "x2", "y2", "duration_ms"), tap.properties.keys.toList())
@@ -97,6 +118,34 @@ class PhoneToolSchemaTest {
         val days = intent.properties["days"] as Map<*, *>
         assertEquals(mapOf("type" to "integer"), days["items"])
         assertTrue((days["description"] as String).contains("1=周一 … 7=周日"))
+    }
+
+    @Test fun rootDeviceInfoRejectsArbitraryPathsAndShellMetacharacters() {
+        for (path in listOf("/", "/data", "/system/../data", "/system//bin", "/system\\bin", "/system/bin;id", "/vendorized", "/productish")) {
+            assertNull("must reject path=$path", RootDeviceInfoTool.parse(Args(mapOf("operation" to "metadata", "path" to path))) )
+        }
+        assertNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "list", "path" to "/system", "recursive" to true))))
+        assertNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "execute", "path" to "/system"))))
+    }
+
+    @Test fun rootDeviceInfoOnlyBuildsQuotedReadOnlyNonRecursiveCommands() {
+        val list = checkNotNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "list", "path" to "/system/bin"))))
+        assertTrue(list.command().contains("target=\$(/system/bin/readlink -f '/system/bin')"))
+        assertTrue(list.command().contains("canonical=\$(/system/bin/readlink -f \"\$root\""))
+        assertTrue(list.command().contains("/system/bin/readlink -f"))
+        assertTrue(list.command().contains("/system/bin/ls -la"))
+        assertTrue(list.command().contains("allowed=0; for root in /system /system_ext /vendor /product /odm"))
+        assertTrue(list.command().contains("readlink -f \"\$root\""))
+        assertTrue(list.command().contains("[ \"\$canonical\" != / ]"))
+        assertTrue(list.command().contains("case \"\$target\" in \"\$canonical\"|\"\$canonical\"/*)"))
+        assertFalse(list.command().contains("readlink -f --"))
+        assertFalse(list.command().contains("ls -la --"))
+        assertFalse(list.command().contains("rm "))
+        assertFalse(list.command().contains("find "))
+        val metadata = checkNotNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "metadata", "path" to "/vendor/etc"))))
+        assertTrue(metadata.command().contains("/system/bin/ls -ld"))
+        val quoted = checkNotNull(RootDeviceInfoTool.parse(Args(mapOf("operation" to "metadata", "path" to "/system/a'b"))))
+        assertTrue(quoted.command().contains("'/system/a'\\''b'"))
     }
 
     @Test fun alarmTimeAndWeekdayBoundsStillRejectBeforeSystemDispatch() {
