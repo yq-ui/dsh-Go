@@ -56,6 +56,8 @@ class AndroidShellStatus {
     this.shizuku = const AndroidShellShizukuStatus(),
     this.adb = const AndroidShellAdbStatus(),
     this.rootConnected = false,
+    this.rootError,
+    this.rootSu,
     this.limits = const {},
   });
 
@@ -72,7 +74,10 @@ class AndroidShellStatus {
     final limits = _map(value['limits']);
     final enabled = value['enabled'] == true;
     final uid = _nonNegativeInt(value['uid']);
-    final rootConnected = _map(value['root'])['connected'] == true;
+    final root = _map(value['root']);
+    final rootConnected = root['connected'] == true;
+    final rootError = _code(root['error']);
+    final rootSu = root['su'] is String ? root['su'] as String : null;
     final ready = enabled && value['ready'] == true &&
         (backend != AndroidShellBackend.root || (uid == 0 && rootConnected));
     return AndroidShellStatus(
@@ -85,6 +90,8 @@ class AndroidShellStatus {
       shizuku: AndroidShellShizukuStatus.fromMap(_map(value['shizuku'])),
       adb: AndroidShellAdbStatus.fromMap(_map(value['adb'])),
       rootConnected: rootConnected,
+      rootError: rootError,
+      rootSu: rootSu,
       limits: Map.unmodifiable({
         for (final key in const ['defaultTimeoutMs', 'maxTimeoutMs', 'maxOutputBytes', 'maxCommandBytes'])
           key: ?_nonNegativeInt(limits[key]),
@@ -101,6 +108,8 @@ class AndroidShellStatus {
   final AndroidShellShizukuStatus shizuku;
   final AndroidShellAdbStatus adb;
   final bool rootConnected;
+  final String? rootError;
+  final String? rootSu;
   final Map<String, int> limits;
 }
 
