@@ -22,6 +22,12 @@ String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'shizukuStopped' => l10n.androidShellErrorShizukuStopped,
   'permissionRequired' => l10n.androidShellErrorPermissionRequired,
   'adbNotPaired' => l10n.androidShellErrorAdbNotPaired,
+  'rootStartFailed' => AppLocale.isEnglish
+      ? 'Root backend did not start. Check that a root manager is available and retry.'
+      : 'Root 后端未能启动；检查 root 管理器是否可用后重试。',
+  'rootIdentityMismatch' => AppLocale.isEnglish
+      ? 'Root identity verification failed (UID must be 0); the command did not run.'
+      : 'Root 后端身份校验未通过（UID 必须为 0），命令未执行。',
   'connectFailed' => l10n.androidShellErrorConnectFailed,
   'identityChanged' => l10n.androidShellErrorIdentityChanged,
   'helperStartFailed' => l10n.androidShellErrorHelperStartFailed,
@@ -175,6 +181,12 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     final timeout = _status.limits['maxTimeoutMs'];
     final output = _status.limits['maxOutputBytes'];
     final shizuku = _status.backend == AndroidShellBackend.shizuku;
+    final root = _status.backend == AndroidShellBackend.root;
+    final backendName = shizuku
+        ? 'Shizuku'
+        : root
+            ? 'Root (su)'
+            : l10n.androidShellAdb;
     final authorize = ListPageRow(
       key: const ValueKey('android-shell-authorize'),
       title: l10n.androidShellAuthorize,
@@ -253,7 +265,11 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                 child: ListPageRow(
                   key: ValueKey('android-shell-backend-${backend.name}'),
                   leading: Icon(_status.backend == backend ? AppIcons.radioOn : AppIcons.radioOff),
-                  title: backend == AndroidShellBackend.shizuku ? 'Shizuku' : l10n.androidShellAdb,
+                  title: switch (backend) {
+                    AndroidShellBackend.shizuku => 'Shizuku',
+                    AndroidShellBackend.adb => l10n.androidShellAdb,
+                    AndroidShellBackend.root => 'Root (su)',
+                  },
                   onTap: !canSetup || _status.backend == backend
                       ? null
                       : () => unawaited(_run(() => _channel.configure(enabled: _status.enabled, backend: backend))),
@@ -263,19 +279,23 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
         ),
         if (shizuku && !_status.shizuku.granted)
           ListPageCard(margin: _margin, children: [authorize])
-        else if (!shizuku && !_status.adb.paired)
+        else if (!shizuku && !root && !_status.adb.paired)
           ListPageCard(margin: _margin, children: pairing),
-        if (!_status.ready && (shizuku ? _status.shizuku.granted : _status.adb.paired))
+        if (!_status.ready && (root || (shizuku ? _status.shizuku.granted : _status.adb.paired)))
           ListPageCard(
             margin: _margin,
             children: [
               ListPageRow(
-                key: ValueKey(shizuku ? 'android-shell-connect-shizuku' : 'android-shell-connect'),
-                title: shizuku ? l10n.androidShellConnectChannel : l10n.androidShellConnect,
+                key: ValueKey('android-shell-connect-${_status.backend.name}'),
+                title: shizuku
+                    ? l10n.androidShellConnectChannel
+                    : root
+                        ? (AppLocale.isEnglish ? 'Connect Root Shell' : '连接 Root Shell')
+                        : l10n.androidShellConnect,
                 titleMaxLines: 2,
                 subtitle: !_status.enabled ? l10n.androidShellErrorDisabled : null,
                 onTap: canSetup && _status.enabled
-                    ? () => unawaited(shizuku ? _run(_channel.connect) : _adbInput(pairing: false))
+                    ? () => unawaited((shizuku || root) ? _run(_channel.connect) : _adbInput(pairing: false))
                     : null,
               ),
             ],
@@ -299,7 +319,13 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
           children: [
             PhoneNote(text: l10n.androidShellSubtitle),
             PhoneNote(text: l10n.androidShellEnableHint),
-            PhoneNote(text: shizuku ? l10n.androidShellShizukuHint : l10n.androidShellAdbHint),
+            PhoneNote(text: shizuku
+                ? l10n.androidShellShizukuHint
+                : root
+                    ? (AppLocale.isEnglish
+                        ? 'The root manager will request access on connect. DSH verifies the actual UID is 0. Commands still require individual confirmation. The Linux guest and Android host are separate environments.'
+                        : '连接时由 root 管理器弹窗授权；连接成功后会校验实际 UID=0。命令仍需逐条确认。Linux guest 与 Android 主机是不同执行环境。')
+                    : l10n.androidShellAdbHint),
             ListPageCard(
               margin: _margin,
               children: [
@@ -322,6 +348,12 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                   _fact(l10n.androidShellRunning, _status.shizuku.running),
                   _fact(l10n.androidShellGranted, _status.shizuku.granted),
                   if (_status.shizuku.granted) authorize,
+                ] else if (root) ...[
+                  _fact('su 通道已连接', _status.ready && _status.uid == 0),
+                  ListPageRow(title: '后端', value: backendName),
+                  if (_status.rootSu != null) ListPageRow(title: 'su 路径', value: _status.rootSu!, titleMaxLines: 2),
+                  if (_status.rootError != null)
+                    ListPageRow(title: '最近一次失败', value: _status.rootError!, titleMaxLines: 5),
                 ] else ...[
                   _fact(l10n.androidShellPaired, _status.adb.paired),
                   _fact(l10n.androidShellConnected, _status.adb.connected),
@@ -329,7 +361,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                 ],
               ],
             ),
-            PhoneNote(text: shizuku ? l10n.androidShellAuthorizeHint : l10n.androidShellPairingGuide),
+            if (!root) PhoneNote(text: shizuku ? l10n.androidShellAuthorizeHint : l10n.androidShellPairingGuide),
             PhoneNote(text: l10n.androidShellStopHint),
           ],
         ),
