@@ -67,8 +67,9 @@ internal object BuiltinContent {
                 treeCount++
             }
             // Command wrappers land on the guest PATH; the profile script exports the tools' home.
-            for (bin in manifest.optJSONArray("bins") ?: JSONArray()) {
-                val entry = bin as? JSONObject ?: continue
+            val bins = manifest.optJSONArray("bins") ?: JSONArray()
+            for (i in 0 until bins.length()) {
+                val entry = bins.optJSONObject(i) ?: continue
                 val from = entry.optString("from").takeIf { it.isNotEmpty() } ?: continue
                 val to = entry.optString("to").takeIf { it.isNotEmpty() } ?: continue
                 if (from.contains("..") || to.contains("..")) continue
