@@ -135,6 +135,29 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     return _channel.configure(enabled: enabled, backend: _status.backend);
   });
 
+  /// Selecting a backend must stay possible even if a previous call wedged the busy flag.
+  Future<void> _selectBackend(AndroidShellBackend backend) async {
+    if (_loading || !_status.supported) return;
+    setState(() {
+      _errorCode = null;
+      _busy = true;
+    });
+    try {
+      final result = await _channel
+          .configure(enabled: _status.enabled, backend: backend)
+          .timeout(const Duration(seconds: 20));
+      if (!mounted) return;
+      setState(() => _errorCode = result.ok ? null : result.errorCode ?? 'invalidResponse');
+    } on TimeoutException {
+      if (mounted) setState(() => _errorCode = 'timeout');
+    } catch (_) {
+      if (mounted) setState(() => _errorCode = 'invalidResponse');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+      await _refresh();
+    }
+  }
+
   Future<void> _authorize() =>
       _run(() async => AndroidShellResult(await _channel.requestPermission(), errorCode: 'permissionRequired'));
 
@@ -270,9 +293,9 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                     AndroidShellBackend.adb => l10n.androidShellAdb,
                     AndroidShellBackend.root => 'Root (su)',
                   },
-                  onTap: !canSetup || _status.backend == backend
+                  onTap: _loading || !_status.supported || _status.backend == backend
                       ? null
-                      : () => unawaited(_run(() => _channel.configure(enabled: _status.enabled, backend: backend))),
+                      : () => unawaited(_selectBackend(backend)),
                 ),
               ),
           ],
