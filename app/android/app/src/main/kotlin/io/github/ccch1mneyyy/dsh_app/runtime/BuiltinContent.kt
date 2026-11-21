@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 4
+    private const val VERSION = 5
     private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
@@ -65,6 +65,32 @@ internal object BuiltinContent {
                 if (!source.isDirectory) continue
                 applyDir(source, File(rootfs, to), managed = true)
                 treeCount++
+            }
+            // Command wrappers land on the guest PATH; the profile script exports the tools' home.
+            for (bin in manifest.optJSONArray("bins") ?: JSONArray()) {
+                val entry = bin as? JSONObject ?: continue
+                val from = entry.optString("from").takeIf { it.isNotEmpty() } ?: continue
+                val to = entry.optString("to").takeIf { it.isNotEmpty() } ?: continue
+                if (from.contains("..") || to.contains("..")) continue
+                val source = File(rootfs, from)
+                if (!source.isFile) continue
+                val target = File(rootfs, to)
+                target.parentFile?.let { if (!it.isDirectory) it.mkdirs() }
+                Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                target.setExecutable(true, false)
+            }
+            val env = manifest.optJSONObject("env")
+            if (env != null) {
+                val script = StringBuilder("# dsh-go builtin tools; rewritten on install.\n")
+                for (key in env.keys()) {
+                    val value = env.optString(key)
+                    if (key.isEmpty() || value.contains("\n")) continue
+                    script.append("export ").append(key).append("=").append(value).append('\n')
+                }
+                val profileDir = File(rootfs, "etc/profile.d")
+                if (profileDir.isDirectory || profileDir.mkdirs()) {
+                    File(profileDir, "50-dsh-go-tools.sh").writeText(script.toString())
+                }
             }
             // Zip entries carry no mode bits, so native helpers and CLIs are made runnable explicitly.
             for (path in strings(manifest.optJSONArray("exec"))) {
