@@ -122,27 +122,8 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     }
   }
 
-  Future<void> _toggle(bool enabled) => _run(() async {
-    if (enabled) {
-      final l10n = context.l10n;
-      final accepted = await confirmRisk(
-        context,
-        RiskNotice(
-          id: 'phone.android-shell.enable',
-          level: RiskLevel.high,
-          title: l10n.androidShellRiskTitle,
-          body: l10n.androidShellRiskBody,
-          action: l10n.androidShellRiskAction,
-        ),
-      );
-      if (!accepted || !mounted) return const AndroidShellResult(true);
-      final phone = ref.read(phoneProvider);
-      if (!phone.loaded) {
-        return const AndroidShellResult(false, errorCode: 'disabled');
-      }
-    }
-    return _channel.configure(enabled: enabled, backend: _status.backend);
-  });
+  Future<void> _toggle(bool enabled) =>
+      _run(() => _channel.configure(enabled: enabled, backend: _status.backend));
 
   /// Selecting a backend must stay possible even if a previous call wedged the busy flag.
   Future<void> _selectBackend(AndroidShellBackend backend) async {
