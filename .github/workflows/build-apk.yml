@@ -18,7 +18,7 @@ jobs:
         run: |
           mkdir -p app/assets/builtin
           curl -fsSL --retry 6 --retry-delay 3 -o app/assets/builtin/builtin.zip \
-            https://github.com/yq-ui/dsh-Go/releases/download/builtin-v3/builtin.zip
+            https://github.com/yq-ui/dsh-Go/releases/download/builtin-v4/builtin.zip
           test -s app/assets/builtin/builtin.zip
           ls -l app/assets/builtin/builtin.zip
       - uses: actions/setup-java@v4
