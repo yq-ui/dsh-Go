@@ -6,7 +6,7 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -20,12 +20,16 @@ jobs:
       - name: pub get
         working-directory: app
         run: flutter pub get
-      - name: build debug arm64
+      - name: build bundled runtime (arm64)
+        run: bash runtime/build-runtime.sh arm64-v8a
+      - name: build side debug arm64
         working-directory: app
+        env:
+          DSH_SIDE_BUILD: '1'
         run: flutter build apk --debug --flavor arm64 -t lib/main.dart
       - uses: actions/upload-artifact@v4
         with:
-          name: dsh-go-debug-arm64
+          name: dsh-go-side-debug-arm64
           path: app/build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
           retention-days: 7
