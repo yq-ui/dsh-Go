@@ -4,6 +4,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
 fun interface PhoneShellExecutor {
     fun execute(ownerId: Long, command: String, timeoutMs: Long, stillWanted: () -> Boolean,
                 confirm: (String, Int) -> Decision): Map<String, Any?>
+
+    fun executeRoot(ownerId: Long, command: String, timeoutMs: Long, stillWanted: () -> Boolean,
+                    confirm: (String, Int) -> Decision): Map<String, Any?> =
+        PhoneAndroidShell.failure("rootUnavailable")
+
+    fun inspectRoot(ownerId: Long, operation: String, path: String, stillWanted: () -> Boolean,
+                    confirm: (String, Int) -> Decision): Map<String, Any?> =
+        PhoneAndroidShell.failure("rootUnavailable")
 }
 
 /** A separate grant: UI app/task waivers deliberately have no effect here. */
@@ -46,19 +54,43 @@ object PhoneAndroidShell {
         else -> "confirmationDenied"
     }
 
+    fun inspectRoot(request: RootDeviceInfoTool.Request, owner: PhoneTasks.Owner, tasks: PhoneTasks, scope: SerialWorker.Scope,
+                   executor: PhoneShellExecutor?, enabled: () -> Boolean, locked: () -> Boolean,
+                   gate: () -> UserGate?, ui: PhoneUiText): Map<String, Any?> {
+        fun live() = tasks.isCurrent(owner) && !tasks.isPaused && enabled() && !locked() && !Thread.currentThread().isInterrupted
+        if (!enabled()) return failure("disabled")
+        if (locked()) return failure("locked")
+        if (!live()) return failure("stopped")
+        val command = request.command()
+        if (!validCommand(command)) return failure("invalidArguments")
+        val rootExecutor = executor ?: return failure("unsupported")
+        return rootExecutor.inspectRoot(owner.taskId, request.operation, request.path, ::live) { backend, uid ->
+            if (!live()) Decision.STOP
+            else if (backend != "root" || uid != 0) Decision.DENY
+            else {
+                val prompt = ConfirmRequest(
+                    ui.get("phone_shell_confirm",
+                        "Android Root (UID %1\$s) 将只读检查固定系统分区。不会递归或修改文件。是否允许本次操作？\n\n%2\$s",
+                        uid.toString(), command), // l10n:keep test default
+                    appLabel = null, packageName = null, firstInApp = false, owner = owner,
+                )
+                val decision = scope.userWait { if (live()) gate()?.confirm(prompt) ?: Decision.UNAVAILABLE else Decision.STOP }
+                if (live()) decision else Decision.STOP
+            }
+        }
+    }
     fun run(request: Request, owner: PhoneTasks.Owner, tasks: PhoneTasks, scope: SerialWorker.Scope,
             executor: PhoneShellExecutor?, enabled: () -> Boolean, locked: () -> Boolean,
             gate: () -> UserGate?, ui: PhoneUiText): Map<String, Any?> {
         fun live() = tasks.isCurrent(owner) && !tasks.isPaused && enabled() && !locked() &&
             !Thread.currentThread().isInterrupted
-        // 通道未开启 / 锁屏 / 本轮已结束 refuse this one command; they never end the turn.
         if (!enabled()) return failure("disabled")
         if (locked()) return failure("locked")
-        if (!tasks.isCurrent(owner) || tasks.isPaused || Thread.currentThread().isInterrupted) return failure("stopped")
-        if (executor == null) return failure("unsupported")
-        return executor.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
+        if (!live()) return failure("stopped")
+        val shell = executor ?: return failure("unsupported")
+        return shell.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
             if (!live()) Decision.STOP
-            else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000))) Decision.DENY
+            else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000) || backend == "root" && uid == 0)) Decision.DENY
             else if (tasks.hasGrant(null, GRANT)) Decision.ALLOW_ONCE
             else {
                 val prompt = ConfirmRequest(
