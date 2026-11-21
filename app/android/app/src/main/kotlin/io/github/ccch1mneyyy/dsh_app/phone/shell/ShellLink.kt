@@ -16,6 +16,7 @@ internal class ShellLink(
     private val exchange: (Bundle) -> Bundle,
     private val transportAlive: () -> Boolean,
     private val retire: () -> Unit,
+    private val rpcTimeoutMs: Long = ShellProtocol.RPC_TIMEOUT_MS,
 ) {
     private val closed = AtomicBoolean(false)
     private val serial = Any()
@@ -26,8 +27,8 @@ internal class ShellLink(
         private set
     @Volatile private var instance: String? = null
 
-    fun probe(): Boolean {
-        val response = call(mapOf("op" to "probe"))
+    fun probe(timeoutMs: Long = rpcTimeoutMs): Boolean {
+        val response = call(mapOf("op" to "probe"), timeoutMs, { true })
         val actualUid = response["uid"] as? Int ?: return false
         val peer = response["instance"] as? String ?: return false
         if (response["ok"] != true || response["revision"] != ShellProtocol.REVISION ||
@@ -37,14 +38,17 @@ internal class ShellLink(
         return true
     }
 
-    fun call(values: Map<String, Any?>, beforeSend: () -> Boolean = { true }): Map<String, Any?> = synchronized(serial) {
+    fun call(values: Map<String, Any?>, beforeSend: () -> Boolean = { true }): Map<String, Any?> =
+        call(values, rpcTimeoutMs, beforeSend)
+
+    private fun call(values: Map<String, Any?>, timeoutMs: Long, beforeSend: () -> Boolean): Map<String, Any?> = synchronized(serial) {
         if (!alive()) throw IOException("transportLost")
         val body = values + mapOf("revision" to ShellProtocol.REVISION, "instance" to instance)
         val future = worker.submit<Bundle> {
             if (!beforeSend()) shellBundle(ShellProtocol.failure("cancelled")) else exchange(shellBundle(body))
         }
         try {
-            future.get(ShellProtocol.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS).shellMap()
+            future.get(timeoutMs, TimeUnit.MILLISECONDS).shellMap()
         } catch (error: Exception) {
             future.cancel(true)
             close()
@@ -62,6 +66,22 @@ internal class ShellLink(
     }
 
     companion object {
+        fun root(process: Process): ShellLink {
+            var synced = false
+            val input = process.inputStream
+            val output = process.outputStream
+            return ShellLink("root", { request ->
+                if (!synced) { ShellWire.sync(input); synced = true }
+                ShellWire.write(output, Bundles.marshal(request))
+                Bundles.unmarshal(ShellWire.read(input) ?: throw IOException("transportLost"))
+            }, { process.isAlive }, {
+                runCatching { process.destroyForcibly() }
+                runCatching { output.close() }
+                runCatching { input.close() }
+                runCatching { process.errorStream.close() }
+            })
+        }
+
         fun adb(stream: AdbStream): ShellLink {
             var synced = false
             val input = stream.openInputStream()
