@@ -111,6 +111,8 @@ class MainActivity : FlutterActivity() {
         // After LaunchScreen read what this launch's splash showed: the next ones show the icon
         // (and launch screen) chosen now (Android 13+).
         LaunchThemeSync.sync(this)
+        // 开屏动画: the bundled clip plays once on a cold start, then uncovers Flutter.
+        io.github.ccch1mneyyy.dsh_app.launch.SplashVideo.playIfColdStart(this, savedInstanceState == null)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
