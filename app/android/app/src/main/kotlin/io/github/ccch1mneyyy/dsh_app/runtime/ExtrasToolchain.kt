@@ -36,6 +36,7 @@ internal object ExtrasToolchain {
 
     /** Runs on a worker: never on the UI thread, never blocking the launch. */
     fun install(context: Context, rootfs: File, log: (String) -> Unit) {
+        installAddon(context, rootfs, log)
         val root = File(rootfs, ROOT)
         val marker = File(rootfs, MARKER)
         if (File(root, "catalog.json").isFile && marker.isFile) return
@@ -55,6 +56,118 @@ internal object ExtrasToolchain {
         } catch (e: Exception) {
             log("[dsh-app] reverse toolchain not installed: " + (e.message ?: e.javaClass.simpleName))
         }
+    }
+
+    // ── 内置补充包 ──────────────────────────────────────────────────────────────
+    // 缺少的几项（rizin / LLDB / LIEF / Unicorn / tree-sitter / Semgrep / JADX headless MCP
+    // 以及四个 JVM 库的 jar）由 CI 从上游取回，打进 APK 的 assets；这里只做解包与拷贝，
+    // 不在运行时下载、不跑 pip、不跑 dpkg，失败只会少这些工具，不影响引擎启动。
+
+    private const val ADDON_ASSET = "flutter_assets/assets/builtin/re-toolchain-addon.zip"
+    private const val ADDON_MARKER = "root/.dsh/.dsh-go-re-addon.json"
+    private const val ADDON_VERSION = 1
+    private const val ADDON_MAX_ENTRIES = 60_000
+    private const val ADDON_MAX_TOTAL = 3L * 1024 * 1024 * 1024
+
+    /** Installs the bundled add-on; safe to call on every start (a marker skips a repeat). */
+    fun installAddon(context: Context, rootfs: File, log: (String) -> Unit) {
+        val marker = File(rootfs, ADDON_MARKER)
+        val done = try {
+            marker.isFile && org.json.JSONObject(marker.readText()).optInt("v") >= ADDON_VERSION
+        } catch (_: Exception) {
+            false
+        }
+        if (done) return
+        val staging = File(context.cacheDir, "re-addon-staging")
+        try {
+            staging.deleteRecursively()
+            if (!staging.isDirectory && !staging.mkdirs()) throw IOException("cannot stage add-on")
+            var entries = 0
+            var total = 0L
+            context.assets.open(ADDON_ASSET).use { stream ->
+                ZipInputStream(stream.buffered()).use { zip ->
+                    val root = staging.canonicalPath
+                    while (true) {
+                        val entry = zip.nextEntry ?: break
+                        if (++entries > ADDON_MAX_ENTRIES) throw IOException("add-on has too many entries")
+                        val name = entry.name.replace('\\', '/')
+                        if (!SAFE.matches(name) || name.contains("..")) throw IOException("unsafe add-on entry")
+                        val target = File(staging, name)
+                        val canonical = target.canonicalPath
+                        if (canonical != root && !canonical.startsWith(root + File.separator)) {
+                            throw IOException("unsafe add-on entry")
+                        }
+                        if (entry.isDirectory) {
+                            if (!target.isDirectory && !target.mkdirs()) throw IOException("cannot create add-on directory")
+                            zip.closeEntry()
+                            continue
+                        }
+                        val parent = target.parentFile
+                        if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
+                            throw IOException("cannot create add-on directory")
+                        }
+                        FileOutputStream(target).use { out ->
+                            val buffer = ByteArray(128 * 1024)
+                            while (true) {
+                                val read = zip.read(buffer)
+                                if (read < 0) break
+                                total += read
+                                if (total > ADDON_MAX_TOTAL) throw IOException("add-on is too large")
+                                out.write(buffer, 0, read)
+                            }
+                            out.fd.sync()
+                        }
+                        zip.closeEntry()
+                    }
+                }
+            }
+            val tree = File(staging, "tree")
+            if (!tree.isDirectory) throw IOException("add-on has no tree")
+            val copied = copyTree(tree, rootfs)
+            for (path in execList(staging)) {
+                runCatching { File(rootfs, path).setExecutable(true, false) }
+            }
+            marker.parentFile?.mkdirs()
+            marker.writeText(
+                org.json.JSONObject().put("v", ADDON_VERSION).put("files", copied).put("bytes", total).toString(),
+            )
+            log("[dsh-app] reverse toolchain add-on: ready (" + copied + " files)")
+        } catch (e: Exception) {
+            log("[dsh-app] reverse toolchain add-on not installed: " + (e.message ?: e.javaClass.simpleName))
+        } finally {
+            staging.deleteRecursively()
+        }
+    }
+
+    /** Copies [from] into [into], returning the number of files written. */
+    private fun copyTree(from: File, into: File): Int {
+        val root = into.canonicalPath
+        var count = 0
+        from.walkTopDown().forEach { source ->
+            if (source == from) return@forEach
+            val rel = source.relativeTo(from).path.replace(File.separatorChar, '/')
+            if (rel.contains("..")) return@forEach
+            val target = File(into, rel)
+            val canonical = target.canonicalPath
+            if (canonical != root && !canonical.startsWith(root + File.separator)) return@forEach
+            if (source.isDirectory) {
+                if (!target.isDirectory) target.mkdirs()
+            } else {
+                target.parentFile?.let { if (!it.isDirectory) it.mkdirs() }
+                Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                count++
+            }
+        }
+        return count
+    }
+
+    /** Paths (relative to the guest root) the add-on wants executable; CI writes the list. */
+    private fun execList(staging: File): List<String> {
+        val file = File(staging, "exec.txt")
+        if (!file.isFile) return emptyList()
+        return runCatching {
+            file.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.contains("..") }
+        }.getOrDefault(emptyList())
     }
 
     private fun download(url: String, target: File) {
