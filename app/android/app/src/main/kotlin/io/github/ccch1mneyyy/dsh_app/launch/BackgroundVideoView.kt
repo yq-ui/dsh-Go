@@ -17,7 +17,10 @@ import io.github.ccch1mneyyy.dsh_app.R
  * cropped to fill the screen like a wallpaper. The file is shipped unchanged as
  * res/raw/background.mp4; nothing is downloaded and nothing outside the APK is read.
  */
-class BackgroundVideoView(context: Context) : PlatformView, TextureView(context), TextureView.SurfaceTextureListener {
+class BackgroundVideoView(context: Context) :
+    TextureView(context),
+    PlatformView,
+    TextureView.SurfaceTextureListener {
     private var player: MediaPlayer? = null
 
     init {
