@@ -68,6 +68,7 @@ import '../common/sheet_title_bar.dart';
 import '../common/smooth_size.dart';
 import '../common/status_dot.dart';
 import '../features/all_features_page.dart';
+import '../features/skills_page.dart';
 import '../features/session_export_page.dart';
 import '../onboarding/local_install.dart';
 import '../pets/pet_perch.dart';
@@ -325,7 +326,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
   }
 
-  void _saveDraft() => _draftStore.save(_draftKey, _input.text, _drafts);
+  // Only an explicitly selected leading skill can be mistaken for a command.
+  // Keep that intent with its draft, not with the lifetime of the chat screen.
+  final _draftSkills = <String, String>{};
+
+  void _saveDraft() {
+    final skill = _draftSkills[_draftKey];
+    if (skill != null && parseSlashInput(_input.text)?.token != skill) {
+      _draftSkills.remove(_draftKey);
+    }
+    _draftStore.save(_draftKey, _input.text, _drafts);
+  }
 
   /// Attachments first: setting the text saves both.
   void _showDraft(ChatDraft? draft) {
@@ -425,6 +436,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     });
     ref.listenManual(activeConnectionProvider.select((c) => c.value?.client), (_, _) {
       _dropPreparedPhoneSkill();
+      _draftSkills.clear();
       _draftScope = Object();
       if (_creating != null || _syncWait != null) {
         setState(() {
@@ -462,11 +474,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _focus.requestFocus();
   }
 
-  /// Skills handed over from 技能: `/name` alone is then a message, never a
-  /// command whose name merely starts the same way (a new chat has no skill
-  /// list to tell them apart).
-  final _handedSkills = <String>{};
-
   /// 技能 › 「在对话里用」/「新对话里用」: the word into that conversation's
   /// composer (null: a new one) at the caret, focused, confirmed above it.
   void _takeComposerInsert() {
@@ -489,8 +496,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ref.read(currentSessionProvider.notifier).select(insert.sessionId);
     }
     _switchDraft(insert.sessionId);
-    if (insert.skill case final name?) _handedSkills.add(name);
-    _input.value = insertComposerToken(_input.value, insert.token);
+    final value = insertComposerToken(_input.value, insert.token);
+    if (insert.skill case final name? when parseSlashInput(value.text)?.token == name) {
+      _draftSkills[_draftKey] = name;
+    }
+    _input.value = value;
+    if (_draftSkills.containsKey(_draftKey)) _dismissSlashPalette();
     _focus.requestFocus();
     _composerToast(composerInsertedText);
   }
@@ -614,7 +625,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         permission: newChatPermissionToApply(ref.read(permissionStateProvider(null)).value, pendingModes.permission),
         model: ref.read(pendingModelProvider),
       );
+      final skill = _draftSkills.remove(_draftKey);
       _draftKey = sessionId;
+      if (skill != null) _draftSkills[sessionId] = skill;
       _saveDraft();
       if (!ownsCreation() || _draftKey != sessionId) return null;
       ref.read(currentSessionProvider.notifier).select(sessionId);
@@ -738,6 +751,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }
     }
 
+    final selectedSkill = _draftSkills[_draftKey];
     final sessionId = await _ensureSession(isCurrent: ownsDraft);
     if (sessionId == null || !ownsDraft() || _draftKey != sessionId) return;
     final chat = ref.read(chatProvider(sessionId).notifier);
@@ -792,7 +806,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       // A generation request, counted on top of its turn.
       if (ok && generate != null && mounted) ref.read(usageStatsProvider.notifier).count(UsageCount.gen);
     }
-    if (!ok && _sameHost(client)) _giveBack(sessionId, typed, drafts, quote: quote);
+    if (!ok && _sameHost(client)) _giveBack(sessionId, typed, drafts, quote: quote, skill: selectedSkill);
   }
 
   // A failed send belongs to the Host that accepted it. The controller may
@@ -808,7 +822,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _sameHost(DshClient client) => mounted && identical(ref.read(activeConnectionProvider).value?.client, client);
 
   /// 没发出去:把字、附件和引用还给那个对话(用户还没开始打新的才还)。
-  void _giveBack(String sessionId, String text, List<DraftAttachment> attachments, {String? quote}) {
+  void _giveBack(String sessionId, String text, List<DraftAttachment> attachments, {String? quote, String? skill}) {
     final quotes = ref.read(composerQuoteProvider.notifier);
     if (quote != null && ref.read(composerQuoteProvider)[sessionId] == null) {
       quotes.set(sessionId, quote);
@@ -816,12 +830,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (_draftKey != sessionId) {
       // Moved on to another conversation: back into its own draft.
       if (ref.read(draftStoreProvider).drafts[sessionId] == null) {
+        if (skill != null) _draftSkills[sessionId] = skill;
         _draftStore.save(sessionId, text, attachments);
       }
       return;
     }
     if (_drafts.isEmpty) setState(() => _drafts = attachments);
     if (_input.text.isEmpty) {
+      if (skill != null) _draftSkills[sessionId] = skill;
       _input.value = TextEditingValue(
         text: text,
         selection: TextSelection.collapsed(offset: text.length),
@@ -1391,7 +1407,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   /// such as a path).
   (SlashCommand, String, bool)? _slashFor(String text) {
     final input = parseSlashInput(text);
-    if (input == null) return null;
+    if (input == null || _draftSkills[_draftKey] == input.token) return null;
     final commands = _commands;
     final exact = resolveSlashCommand(commands, input.token);
     // `/skill …` is a message: the Host loads the skill from its text.
@@ -1400,7 +1416,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       return (exact, '/${exact.name}${input.rest ?? ''}', false);
     }
     if (input.hasArgs) return null;
-    if (_handedSkills.contains(input.token)) return null;
     final matches = filterSlashCommands(commands, input.token);
     if (matches.isEmpty) return null;
     return (matches.first, '/${matches.first.name}', true);
@@ -1417,6 +1432,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       final prefix = '${value.text.substring(0, leading)}/${command.name}';
       final separator = suffix.isEmpty || !RegExp(r'^\s').hasMatch(suffix) ? ' ' : '';
       final text = '$prefix$separator$suffix';
+      if (command.kind == SlashCommandKind.skill) {
+        _draftSkills[_draftKey] = command.name;
+      } else {
+        _draftSkills.remove(_draftKey);
+      }
       _input.value = TextEditingValue(
         text: text,
         selection: TextSelection.collapsed(offset: (prefix.length + 1).clamp(0, text.length)),
@@ -1431,6 +1451,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     HapticFeedback.selectionClick();
     switch (command.kind) {
       case SlashCommandKind.app:
+        if (command.name == 'skills') {
+          final client = ref.read(activeConnectionProvider).value?.client;
+          if (client == null) {
+            _toast(appL10n.commonNotConnected);
+            return;
+          }
+          final generation = client.mux.generation;
+          final scope = _draftScope;
+          final route = ModalRoute.of(context);
+          final initialDraft = _input.text;
+          bool current() =>
+              _sameConnection(client, generation) &&
+              identical(_draftScope, scope) &&
+              (route?.isCurrent ?? true) &&
+              _input.text == initialDraft;
+          // A catalog belongs to a session. Only an explicit pick creates one;
+          // typing a slash must not create a conversation or send a message.
+          final id = await _ensureSession(isCurrent: current);
+          if (!mounted || id == null || !current() || ref.read(currentSessionProvider) != id) return;
+          _input.clear();
+          await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => SkillsPage(sessionId: id)));
+          return;
+        }
         _input.clear();
         switch (command.name) {
           case 'new':
