@@ -375,7 +375,6 @@ String _abilities(L10n l) => l.hubGroupCapabilities;
 String _look(L10n l) => l.hubSettingsAppearance;
 String _general(L10n l) => l.hubGroupGeneral;
 String _hosts(L10n l) => l.hubGroupHosts;
-String _help(L10n l) => l.hubGroupHelp;
 
 final _pages = <SettingsPageMeta>[
   SettingsPageMeta(SettingsPageId.hub, title: (l) => l.commonSettings, parent: null, links: const ['settings']),
@@ -650,21 +649,6 @@ final _pages = <SettingsPageMeta>[
     links: const ['all-features'],
     row: false,
   ),
-  // 帮助与关于
-  SettingsPageMeta(
-    SettingsPageId.diagnostics,
-    title: (l) => l.phoneEngineDiagnostics,
-    group: _help,
-    keywords: (l) => l.searchKwDiagnostics,
-    links: const ['diagnostics'],
-  ),
-  SettingsPageMeta(
-    SettingsPageId.about,
-    title: (l) => l.hubAbout,
-    group: _help,
-    keywords: (l) => l.searchKwAbout,
-    links: const ['about'],
-  ),
   // The overview card.
   SettingsPageMeta(
     SettingsPageId.account,
@@ -702,21 +686,6 @@ abstract final class Spots {
     group: _general,
     title: (l) => l.localeTitle,
     keywords: (l) => l.searchKwLanguage,
-  );
-  static final askAi = SettingSpot(
-    'ask-ai',
-    page: SettingsPageId.hub,
-    group: _help,
-    title: (l) => l.askAiHelpTitle,
-    keywords: (l) => l.searchKwHelp,
-    condition: SpotCondition.nativeUi,
-  );
-  static final community = SettingSpot(
-    'community',
-    page: SettingsPageId.hub,
-    group: _help,
-    title: (l) => l.hubSettingsCommunity,
-    keywords: (l) => l.searchKwCommunity,
   );
 
   // 模型.
@@ -1201,45 +1170,12 @@ abstract final class Spots {
     condition: SpotCondition.engineField,
   );
 
-  // 关于 dsh-go.
-  static final version = SettingSpot(
-    'version',
-    page: SettingsPageId.about,
-    title: (l) => l.commonVersion,
-    keywords: (l) => l.searchKwVersion,
-  );
-  static final updateCheck = SettingSpot(
-    'update-check',
-    page: SettingsPageId.about,
-    title: (l) => l.updateCheck,
-    keywords: (l) => l.searchKwUpdate,
-  );
-  static final updateAuto = SettingSpot(
-    'update-auto',
-    page: SettingsPageId.about,
-    title: (l) => l.updateAutoCheck,
-    keywords: (l) => l.searchKwUpdateAuto,
-  );
-  static final star = SettingSpot(
-    'star',
-    page: SettingsPageId.about,
-    title: (l) => l.starSettingsTitle,
-    keywords: (l) => l.searchKwStar,
-  );
-  static final licenses = SettingSpot(
-    'licenses',
-    page: SettingsPageId.about,
-    title: (l) => l.hubSettingsLicenses,
-    keywords: (l) => l.searchKwLicenses,
-  );
 }
 
 final _rows = <SettingSpot>[
   Spots.chatTextSize,
   Spots.foldTurns,
   Spots.language,
-  Spots.askAi,
-  Spots.community,
   Spots.addProvider,
   Spots.permissionCurrent,
   Spots.permissionDefault,
@@ -1306,9 +1242,4 @@ final _rows = <SettingSpot>[
   Spots.subagentDepth,
   Spots.parallelCalls,
   Spots.commandTimeout,
-  Spots.version,
-  Spots.updateCheck,
-  Spots.updateAuto,
-  Spots.star,
-  Spots.licenses,
 ];
