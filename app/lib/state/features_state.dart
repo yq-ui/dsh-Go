@@ -72,7 +72,7 @@ final skillsProvider = FutureProvider.autoDispose.family<List<SkillInfo>?, Strin
   if (client == null) return null;
   _refreshOn(ref, client, const {'commands/change', 'plugin-manager/changed'});
   final skills = await client.listSkills(sessionId);
-  return skills..sort((a, b) => a.name.compareTo(b.name));
+  return skills.toList()..sort((a, b) => a.name.compareTo(b.name));
 });
 
 // ── Agent 预设 ────────────────────────────────────────────────────────────────
