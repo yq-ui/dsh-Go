@@ -195,6 +195,11 @@ class MainActivity : FlutterActivity() {
     /** Per activity: the handler acts on this activity, so it goes with it (see [cleanUpFlutterEngine]). */
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 背景视频: the moving backdrop is a platform view playing the bundled clip.
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "dsh/background-video",
+            io.github.ccch1mneyyy.dsh_app.launch.BackgroundVideoView.Factory(),
+        )
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
