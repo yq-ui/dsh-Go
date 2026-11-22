@@ -230,6 +230,11 @@ class MainActivity : FlutterActivity() {
         }
         devToolsChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/devtools")
         devToolsChannel!!.setMethodCallHandler { call, result -> devTools.handle(call, result) }
+        // 开发者工具 › 编辑器: a Sora code editor hosted as a platform view.
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "dsh/devtools/editor",
+            io.github.ccch1mneyyy.dsh_app.devtools.CodeEditorView.Factory(flutterEngine.dartExecutor.binaryMessenger),
+        )
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
