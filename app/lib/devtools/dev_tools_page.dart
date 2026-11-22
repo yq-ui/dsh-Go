@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/l10n.dart';
 import '../ui/common/list_page_row.dart';
@@ -21,6 +22,8 @@ class DevToolsPage extends StatefulWidget {
 class _DevToolsPageState extends State<DevToolsPage> {
   final _path = TextEditingController();
   final _message = TextEditingController();
+  final _editorPath = TextEditingController();
+  bool _editorOpen = false;
   GitStatus? _status;
   List<GitCommit> _log = const [];
   String? _error;
@@ -37,6 +40,7 @@ class _DevToolsPageState extends State<DevToolsPage> {
   void dispose() {
     _path.dispose();
     _message.dispose();
+    _editorPath.dispose();
     super.dispose();
   }
 
@@ -76,6 +80,16 @@ class _DevToolsPageState extends State<DevToolsPage> {
       _log = log;
     });
   });
+
+  static const MethodChannel _editorChannel = MethodChannel('dsh/devtools/editor');
+
+  Future<void> _editor(String method) async {
+    try {
+      await _editorChannel.invokeMethod<void>(method);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
 
   Future<void> _commit() => _run(() async {
     final id = await DevTools.commit(_path.text.trim(), _message.text);
@@ -168,6 +182,50 @@ class _DevToolsPageState extends State<DevToolsPage> {
                   subtitleMaxLines: 1,
                 ),
             ],
+          ),
+        const SizedBox(height: 32),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: TextField(
+            controller: _editorPath,
+            decoration: const InputDecoration(labelText: 'Edit file (host path)', border: OutlineInputBorder()),
+            style: AppType.monoLabel(color: theme.colorScheme.onSurface),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 8,
+            children: [
+              FilledButton(
+                onPressed: _editorPath.text.trim().isEmpty ? null : () => setState(() => _editorOpen = true),
+                child: const Text('打开编辑器'),
+              ),
+              OutlinedButton(
+                onPressed: _editorOpen ? () => _editor('save') : null,
+                child: const Text('保存'),
+              ),
+              OutlinedButton(
+                onPressed: _editorOpen ? () => _editor('reload') : null,
+                child: const Text('重新载入'),
+              ),
+            ],
+          ),
+        ),
+        if (_editorOpen)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SizedBox(
+              height: 360,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AndroidView(
+                  viewType: 'dsh/devtools/editor',
+                  creationParams: {'path': _editorPath.text.trim()},
+                  creationParamsCodec: const StandardMessageCodec(),
+                ),
+              ),
+            ),
           ),
         const SizedBox(height: 24),
       ],
