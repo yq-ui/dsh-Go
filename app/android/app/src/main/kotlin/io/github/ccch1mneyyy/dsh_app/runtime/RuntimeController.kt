@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
+import kotlin.concurrent.thread
 import io.github.ccch1mneyyy.dsh_app.phone.DiagnosticsTool
 import org.json.JSONArray
 import org.json.JSONObject
@@ -587,6 +588,10 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                         }
                     } catch (e: Exception) {
                         log("[dsh-app] builtin content not written: " + e.message, "system")
+                    }
+                    // Reverse-engineering toolchain: one download on a worker, never blocks the launch.
+                    thread(isDaemon = true, name = "dsh-re-toolchain") {
+                        ExtrasToolchain.install(app, installer.rootfs) { line -> log(line, "system") }
                     }
                 }
                 if (pendingPhoneStorage && !storage) log("[dsh-app] phone storage requested but permission not granted", "system")
