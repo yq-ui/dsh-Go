@@ -2,6 +2,8 @@ package io.github.ccch1mneyyy.dsh_app.launch
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -19,19 +21,39 @@ import io.github.ccch1mneyyy.dsh_app.R
  * The clip is the bundled res/raw/background.mp4, muted and looped; nothing is downloaded and
  * nothing outside the APK is read.
  */
-internal object WallpaperVideoHost {
+internal class WallpaperVideoHost {
+    private val handler = Handler(Looper.getMainLooper())
+    private val timeout = Runnable { stop() }
     private var player: MediaPlayer? = null
     private var entry: TextureRegistry.SurfaceTextureEntry? = null
     private var surface: Surface? = null
+    private var coveredBySplash = false
+    private var deferredStart: (() -> Unit)? = null
+    private var pending: MethodChannel.Result? = null
 
-    fun handle(
-        context: Context,
-        engine: FlutterEngine,
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
+    fun setSplashCovered(covered: Boolean) {
+        coveredBySplash = covered
+        if (!covered) {
+            val start = deferredStart
+            deferredStart = null
+            start?.invoke()
+        }
+    }
+    private var onEnded: (() -> Unit)? = null
+
+    fun handle(context: Context, engine: FlutterEngine, channel: MethodChannel, call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "start" -> result.success(start(context, engine))
+            "start" -> {
+                val request = call.arguments as? Number
+                stop()
+                if (request == null) {
+                    result.success(null)
+                    return
+                }
+                pending = result
+                val begin = { start(context, engine) { channel.invokeMethod("ended", request) } }
+                if (coveredBySplash) deferredStart = begin else begin()
+            }
             "stop" -> {
                 stop()
                 result.success(null)
@@ -40,48 +62,53 @@ internal object WallpaperVideoHost {
         }
     }
 
-    /** Starts the loop and returns the texture's id, or null when the clip cannot be played. */
-    private fun start(context: Context, engine: FlutterEngine): Long? {
-        stop()
-        // FlutterRenderer is the registry itself.
-        val entry = engine.renderer.createSurfaceTexture()
-        val surface = Surface(entry.surfaceTexture())
-        val media = MediaPlayer()
-        return try {
+    private fun start(context: Context, engine: FlutterEngine, ended: () -> Unit) {
+        onEnded = ended
+        try {
+            val texture = engine.renderer.createSurfaceTexture().also { entry = it }
+            val output = Surface(texture.surfaceTexture()).also { surface = it }
+            val media = MediaPlayer().also { player = it }
             context.resources.openRawResourceFd(R.raw.background).use { fd ->
                 media.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
             }
-            media.setSurface(surface)
+            media.setSurface(output)
             media.isLooping = true
-            // Silent: a wallpaper that keeps its audio would play for hours, and would double up
-            // with the opening animation's sound at start-up. 音效 belongs to the splash.
             media.setVolume(0f, 0f)
-            media.setOnPreparedListener { it.start() }
-            media.setOnErrorListener { _, _, _ -> true }
+            media.setOnPreparedListener {
+                if (it === player) try { it.start() } catch (_: IllegalStateException) { stop() }
+            }
+            media.setOnInfoListener { source, what, _ ->
+                if (source === player && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    handler.removeCallbacks(timeout)
+                    pending?.success(texture.id())
+                    pending = null
+                }
+                false
+            }
+            media.setOnErrorListener { source, _, _ ->
+                if (source === player) stop()
+                true
+            }
+            handler.postDelayed(timeout, 5000L)
             media.prepareAsync()
-            player = media
-            this.entry = entry
-            this.surface = surface
-            entry.id()
         } catch (_: Exception) {
-            media.release()
-            surface.release()
-            entry.release()
-            null
+            stop()
         }
     }
 
-    private fun stop() {
-        player?.let { media ->
-            runCatching {
-                if (media.isPlaying) media.stop()
-            }
-            media.release()
-        }
+    fun stop() {
+        deferredStart = null
+        handler.removeCallbacks(timeout)
+        val media = player
         player = null
+        media?.release()
         surface?.release()
         surface = null
         entry?.release()
         entry = null
+        val waiting = pending
+        pending = null
+        if (waiting != null) waiting.success(null) else onEnded?.invoke()
+        onEnded = null
     }
 }
