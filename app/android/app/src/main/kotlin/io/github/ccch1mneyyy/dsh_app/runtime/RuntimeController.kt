@@ -1121,6 +1121,16 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         timeline.ready()?.let { log(it, "system") }
         setPhase(Phase.RUNNING)
         PhoneControl.get(app).onEngineReady()
+        if (!runSafe) {
+            // The first boot creates the profile only now, so the launch-time install left the plugin
+            // registration pending. Retry here; Settings > Plugins then lists them without a restart.
+            val rootfsNow = installer.rootfs
+            thread(isDaemon = true, name = "dsh-builtin-retry") {
+                runCatching {
+                    BuiltinContent.install(app, rootfsNow)?.let { log("[dsh-app] builtin content: " + it, "system") }
+                }
+            }
+        }
         val gen = runGen
         main.postDelayed({
             synchronized(this) {
