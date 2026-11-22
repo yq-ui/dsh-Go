@@ -33,6 +33,9 @@ String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'cancelled' => l10n.androidShellErrorCancelled,
   'timeout' => l10n.androidShellErrorTimeout,
   'confirmationDenied' => l10n.androidShellErrorConfirmationDenied,
+  'systemProtected' => AppLocale.isEnglish
+      ? 'Refused: this command would modify the Android system itself. That protection is hard-coded.'
+      : '已拒绝：这条命令会改动 Android 系统本身。这条保护是写死的，不能关闭。',
   'cleanupFailed' => l10n.androidShellErrorCleanupFailed,
   'locked' => l10n.androidShellErrorLocked,
   'confirmationUnavailable' => l10n.androidShellErrorConfirmationUnavailable,
