@@ -18,10 +18,14 @@ import io.github.ccch1mneyyy.dsh_app.R
  * held behind the video if playback stalls.
  */
 internal object SplashVideo {
-    private const val LIMIT_MS = 8000L
+    /** The clip is 23.4s; the cap only guards against a decoder that never reports completion. */
+    private const val LIMIT_MS = 30_000L
 
     fun playIfColdStart(activity: Activity, cold: Boolean) {
         if (!cold) return
+        // The engine boots while this plays (LaunchStart runs first), so the animation covers the
+        // start-up instead of delaying it; keep the screen on so it is not dimmed mid-clip.
+        activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
         val frame = FrameLayout(activity)
         frame.setBackgroundColor(android.graphics.Color.BLACK)
