@@ -11,6 +11,7 @@ import 'diagnostics/app_error_log.dart';
 import 'launch/launch_state.dart';
 import 'links/page_links.dart' show registerPageLink, tavernPageLink;
 import 'runtime/local_paths.dart';
+import 'ui/wallpaper/background_video.dart';
 import 'wallpaper/default_wallpaper.dart';
 import 'state/locale_state.dart';
 import 'ui/common/third_party_licenses.dart';
@@ -31,6 +32,8 @@ Future<void> _startApp() async {
   await Future.wait([AppLanguageController.load(), LaunchController.begin(), LocalPaths.load()]);
   // 默认壁纸: the bundled picture becomes the backdrop unless the person already chose one.
   unawaited(ensureDefaultWallpaper());
+  // 背景视频: the clip inside the APK plays behind the pages unless it was switched off.
+  unawaited(loadWallpaperVideoSetting());
   // MIT / OFL notices must ship with the APK, not just the sources.
   registerThirdPartyLicenses();
   registerFontLicenses();
