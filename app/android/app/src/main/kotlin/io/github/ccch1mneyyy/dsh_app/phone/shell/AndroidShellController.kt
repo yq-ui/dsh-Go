@@ -133,6 +133,8 @@ class AndroidShellController(context: Context, private val onChanged: () -> Unit
         confirm: (backend: String, uid: Int) -> Decision, rootOnly: Boolean,
     ): Map<String, Any?> {
         ShellProtocol.commandError(command)?.let { return ShellProtocol.failure(it) }
+        // Hard system protection: independent of the confirmation mode and of "always allow".
+        SystemGuard.rejection(command)?.let { return ShellProtocol.failure(it) }
         if (rootOnly && synchronized(guard) { backend != "root" }) return ShellProtocol.failure("rootBackendRequired")
         ShellProtocol.timeoutError(timeoutMs)?.let { return ShellProtocol.failure(it) }
         val lease = synchronized(guard) {
