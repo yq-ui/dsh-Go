@@ -12,8 +12,8 @@ data class PhonePolicies(
     // rules below (and SystemGuard for the Android host) are what protect the device instead.
     val confirmMode: ConfirmMode = ConfirmMode.ALWAYS,
     val unlocks: PhoneUnlocks = PhoneUnlocks(),
-    /** 始终允许: the master switch for [alwaysAllowPackages]. Off by default. */
-    val alwaysAllowEnabled: Boolean = false,
+    /** 始终允许: the master switch for [alwaysAllowPackages]. On by default in this build. */
+    val alwaysAllowEnabled: Boolean = true,
     /** 始终允许的 App: set only from 设置 › 手机操控 › 始终允许, never from a confirmation. */
     val alwaysAllowPackages: List<String> = emptyList(),
 ) {
