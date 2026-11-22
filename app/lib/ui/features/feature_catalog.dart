@@ -35,6 +35,7 @@ import '../session/session_detail_page.dart';
 import '../share_code/profile_share_sheet.dart';
 import '../shell/session_search_page.dart';
 import '../terminal/terminal_page.dart';
+import '../../devtools/dev_tools_page.dart';
 import '../theme/app_icons.dart';
 import '../web/web_target.dart';
 import '../workspace/workspaces_page.dart';
@@ -273,6 +274,13 @@ final featureSections = <FeatureSection>[
     ),
   ]),
   FeatureSection.localized((l10n) => l10n.catalogAutomationSection, [
+    FeatureItem.localized(
+      id: 'devtools',
+      title: (l10n) => l10n.catalogDevTools,
+      summary: (l10n) => l10n.catalogDevToolsSummary,
+      icon: AppIcons.terminal,
+      native: (_) => const DevToolsPage(),
+    ),
     FeatureItem.localized(
       id: 'schedules',
       title: (l10n) => l10n.catalogSchedules,
