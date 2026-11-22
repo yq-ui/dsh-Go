@@ -15,12 +15,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/wallpaper_state.dart';
-import '../../wallpaper/background_video.dart';
 import '../../wallpaper/custom_wallpaper.dart';
 import '../../wallpaper/wallpaper_look.dart';
 import '../../wallpaper/wallpaper_render.dart';
 import '../chat/chat_header.dart' show ChatHeader;
 import '../theme/theme.dart';
+import 'background_video.dart';
 
 class WallpaperBackdrop extends ConsumerStatefulWidget {
   const WallpaperBackdrop({super.key, required this.child}) : scene = false, picture = null;
