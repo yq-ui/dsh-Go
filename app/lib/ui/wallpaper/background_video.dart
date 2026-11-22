@@ -23,22 +23,49 @@ Future<void> loadWallpaperVideoSetting() async {
 
 /// Puts the moving backdrop behind the whole app, once: the clip is decoded by a single view for
 /// every page, and pages that show it stay transparent instead of owning a player of their own.
-class RootVideoBackdrop extends StatelessWidget {
+class RootVideoBackdrop extends StatefulWidget {
   const RootVideoBackdrop({super.key, required this.child});
 
   final Widget child;
+
+  @override
+  State<RootVideoBackdrop> createState() => _RootVideoBackdropState();
+}
+
+class _RootVideoBackdropState extends State<RootVideoBackdrop> with WidgetsBindingObserver {
+  /// False while the app is in the background: the player is released instead of decoding a clip
+  /// nobody can see.
+  bool _foreground = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground = state == AppLifecycleState.resumed;
+    if (foreground != _foreground) setState(() => _foreground = foreground);
+  }
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: wallpaperVideo,
       builder: (context, on, _) {
-        final show = on && !(MediaQuery.maybeHighContrastOf(context) ?? false);
+        final show = on && _foreground && !(MediaQuery.maybeHighContrastOf(context) ?? false);
         return Stack(
           fit: StackFit.expand,
           children: [
             if (show) const WallpaperVideoBackdrop() else const SizedBox.shrink(),
-            child,
+            widget.child,
           ],
         );
       },
