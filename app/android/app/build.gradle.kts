@@ -193,6 +193,15 @@ dependencies {
     // .tar.xz support for the rootfs bundle.
     implementation("org.tukaani:xz:1.10")
 
+    // 开发者工具 (devtools/): the four libraries the bundled add-on ships as files, on the
+    // app's classpath so the bridges below can actually use them.
+    implementation("org.eclipse.jgit:org.eclipse.jgit:7.8.1.202611041320-r")            // EDL-1.0
+    implementation("org.eclipse.lsp4j:org.eclipse.lsp4j:1.0.0")                          // EPL-2.0
+    implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:1.0.0")                  // EPL-2.0
+    implementation("io.github.Rosemoe.sora-editor:editor:0.23.6")                        // LGPL-2.1
+    implementation("io.modelcontextprotocol:kotlin-sdk-core-jvm:0.16.0")                 // MIT
+    implementation("io.modelcontextprotocol:kotlin-sdk-client-jvm:0.16.0")               // MIT
+
     // 不打扰模式 (phone/background): a shell-uid privileged display via Shizuku or self-ADB.
     implementation("dev.rikka.shizuku:api:13.1.5")       // MIT
     implementation("dev.rikka.shizuku:provider:13.1.5")  // MIT
