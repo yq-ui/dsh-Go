@@ -35,6 +35,7 @@ import java.util.TimeZone
 
 class MainActivity : FlutterActivity() {
     private var appChannel: MethodChannel? = null
+    private var wallpaperChannel: MethodChannel? = null
 
     /**
      * One engine per process, outliving this activity: swiping the app away from recents keeps
@@ -195,11 +196,11 @@ class MainActivity : FlutterActivity() {
     /** Per activity: the handler acts on this activity, so it goes with it (see [cleanUpFlutterEngine]). */
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // 背景视频: the moving backdrop is a platform view playing the bundled clip.
-        flutterEngine.platformViewsController.registry.registerViewFactory(
-            "dsh/background-video",
-            io.github.ccch1mneyyy.dsh_app.launch.BackgroundVideoView.Factory(),
-        )
+        // 背景视频: the clip is played into a texture, which Flutter draws behind the pages.
+        wallpaperChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/wallpaper-video")
+        wallpaperChannel!!.setMethodCallHandler { call, result ->
+            io.github.ccch1mneyyy.dsh_app.launch.WallpaperVideoHost.handle(this, flutterEngine, call, result)
+        }
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -242,6 +243,8 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appChannel?.setMethodCallHandler(null)
         appChannel = null
+        wallpaperChannel?.setMethodCallHandler(null)
+        wallpaperChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
