@@ -31,12 +31,14 @@ import io.github.ccch1mneyyy.dsh_app.share.SharePlugin
 import io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin
 import io.github.ccch1mneyyy.dsh_app.update.UpdatePlugin
 import io.github.ccch1mneyyy.dsh_app.voice.VoicePlugin
+import java.io.File
 import java.lang.ref.WeakReference
 import java.util.TimeZone
 
 class MainActivity : FlutterActivity() {
     private var appChannel: MethodChannel? = null
     private var wallpaperChannel: MethodChannel? = null
+    private var devToolsChannel: MethodChannel? = null
     private val wallpaperPlayer = WallpaperVideoHost()
     private var wallpaperVisible = false
 
@@ -222,6 +224,12 @@ class MainActivity : FlutterActivity() {
             if (call.method == "start" && !wallpaperVisible) result.success(null)
             else wallpaperPlayer.handle(this, flutterEngine, channel, call, result)
         }
+        // 开发者工具: JGit runs in the app process; the bridge only accepts its own roots.
+        val devTools = io.github.ccch1mneyyy.dsh_app.devtools.DevToolsBridge {
+            listOf(File(filesDir, "runtime/rootfs"), File("/storage/emulated/0"))
+        }
+        devToolsChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/devtools")
+        devToolsChannel!!.setMethodCallHandler { call, result -> devTools.handle(call, result) }
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -267,6 +275,8 @@ class MainActivity : FlutterActivity() {
         wallpaperPlayer.stop()
         wallpaperChannel?.setMethodCallHandler(null)
         wallpaperChannel = null
+        devToolsChannel?.setMethodCallHandler(null)
+        devToolsChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
