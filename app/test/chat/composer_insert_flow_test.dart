@@ -143,6 +143,54 @@ void main() {
     expect(harness.controllers['fresh']!.commandLines, isEmpty);
   });
 
+  testWidgets('selected skills win exact command collisions, including a restored failed send', (tester) async {
+    final harness = ChatHarness(session: 's1');
+    final container = await _pump(tester, harness);
+    container.read(composerInsertProvider.notifier).request(const ComposerInsert.skill('compact', sessionId: 's1'));
+    await pumpFrames(tester, 4);
+    final chat = harness.controllers['s1']!;
+    expect(chat.sent, isEmpty);
+    const message = '/compact keep the original wording';
+    await tester.enterText(find.byType(TextField), message);
+    chat.sendResult = Future.value(false);
+    await tester.tap(find.byIcon(AppIcons.send));
+    await pumpFrames(tester, 4);
+    expect(chat.sent, [message]);
+    expect(_field(tester).text, message);
+    chat.sendResult = null;
+    await tester.tap(find.byIcon(AppIcons.send));
+    await pumpFrames(tester, 4);
+    expect(chat.sent, [message, message]);
+    expect(chat.commandLines, isEmpty);
+
+    // The same name typed into the next draft is an ordinary host command.
+    await tester.enterText(find.byType(TextField), '/compact');
+    await pumpFrames(tester, 3);
+    await tester.tap(find.byIcon(AppIcons.send));
+    await pumpFrames(tester, 4);
+    expect(chat.commandLines, ['/compact']);
+  });
+
+  testWidgets('skill intent stays with its draft when switching conversations', (tester) async {
+    final harness = ChatHarness(session: 's1');
+    final container = await _pump(tester, harness);
+    container.read(composerInsertProvider.notifier).request(const ComposerInsert.skill('skills', sessionId: 's1'));
+    await pumpFrames(tester, 4);
+    final sessions = container.read(currentSessionProvider.notifier);
+    sessions.select('s2');
+    await pumpFrames(tester, 4);
+    await tester.enterText(find.byType(TextField), '/compact');
+    sessions.select('s1');
+    await pumpFrames(tester, 4);
+    expect(_field(tester).text, '/skills ');
+    await tester.tap(find.byIcon(AppIcons.send));
+    await pumpFrames(tester, 4);
+    expect(harness.controllers['s1']!.sent, ['/skills']);
+    expect(harness.controllers['s1']!.commandLines, isEmpty);
+    expect(harness.controllers['s2']!.sent, isEmpty);
+    expect(container.read(draftStoreProvider).drafts['s2']?.text, '/compact');
+  });
+
   testWidgets('the engine failure card keeps the only primary action', (tester) async {
     usePhoneView(tester);
     final harness = ChatHarness(
