@@ -33,7 +33,6 @@ import '../engine/engine_status.dart';
 import '../engine_settings/engine_settings_hub.dart';
 import '../engine_settings/web_search_page.dart';
 import 'media_settings_page.dart';
-import '../features/feature_catalog.dart' show communityPage;
 import '../features/feature_format.dart' show permissionName;
 import '../features/permission_page.dart';
 import '../onboarding/api_key_page.dart' show maskApiKey;
@@ -50,8 +49,6 @@ import '../shell/brand_mark.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
-import '../update/update_tiles.dart' show UpdateBadge;
-import 'about_page.dart';
 import 'appearance/appearance_page.dart';
 import 'background_guide_page.dart';
 import 'diagnostics_page.dart';
@@ -128,9 +125,6 @@ class SettingsScreen extends ConsumerWidget {
     // 主机.
     final ssh = ref.watch(hostsProvider.select((s) => s.ssh.length));
     final hostName = host.isLocal ? l10n.commonThisPhone : ref.watch(hostNameProvider(host)) ?? l10n.commonRemoteHost;
-    // 帮助与关于.
-    final update = ref.watch(appUpdateProvider);
-    final newVersion = update.hasUpdate && !update.isSkipped;
 
     final page = AppPage.list(
       title: l10n.commonSettings,
@@ -303,41 +297,6 @@ class SettingsScreen extends ConsumerWidget {
               spot: SettingsIndex.entry(SettingsPageId.engineParams),
               value: Text(hostName),
               onTap: () => _push(context, const EngineSettingsHubPage()),
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: l10n.hubGroupHelp,
-          children: [
-            if (ref.watch(askAiAvailableProvider))
-              SettingsTile(
-                key: const ValueKey('settings-ask-ai'),
-                icon: AppIcons.askAi,
-                tint: SettingsHues.help,
-                spot: Spots.askAi,
-                value: Text(l10n.askAiTooltip),
-                onTap: () => unawaited(askAi(context, AskAiTopic.overview)),
-              ),
-            SettingsTile(
-              icon: AppIcons.community,
-              tint: SettingsHues.help,
-              spot: Spots.community,
-              onTap: () => _push(context, communityPage()),
-            ),
-            SettingsTile(
-              icon: AppIcons.diagnostics,
-              tint: SettingsHues.help,
-              spot: SettingsIndex.entry(SettingsPageId.diagnostics),
-              onTap: () => _push(context, const DiagnosticsPage()),
-            ),
-            SettingsTile(
-              icon: AppIcons.info,
-              tint: SettingsHues.help,
-              spot: SettingsIndex.entry(SettingsPageId.about),
-              value: newVersion
-                  ? UpdateBadge(l10n.hubAboutNewVersion)
-                  : Text(update.current.name, style: AppType.tabular(Theme.of(context).textTheme.bodyMedium!)),
-              onTap: () => _push(context, const AboutPage()),
             ),
           ],
         ),
