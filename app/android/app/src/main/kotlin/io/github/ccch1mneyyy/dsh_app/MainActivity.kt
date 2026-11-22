@@ -21,6 +21,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.github.ccch1mneyyy.dsh_app.files.FilesPlugin
 import io.github.ccch1mneyyy.dsh_app.launch.LaunchScreen
 import io.github.ccch1mneyyy.dsh_app.launch.LaunchThemeSync
+import io.github.ccch1mneyyy.dsh_app.launch.WallpaperVideoHost
 import io.github.ccch1mneyyy.dsh_app.links.LinksPlugin
 import io.github.ccch1mneyyy.dsh_app.notify.NotifyPlugin
 import io.github.ccch1mneyyy.dsh_app.phone.PhonePlugin
@@ -36,6 +37,8 @@ import java.util.TimeZone
 class MainActivity : FlutterActivity() {
     private var appChannel: MethodChannel? = null
     private var wallpaperChannel: MethodChannel? = null
+    private val wallpaperPlayer = WallpaperVideoHost()
+    private var wallpaperVisible = false
 
     /**
      * One engine per process, outliving this activity: swiping the app away from recents keeps
@@ -92,7 +95,8 @@ class MainActivity : FlutterActivity() {
         // 「打开 App 时自动启动」: DSH boots while Flutter starts, not after its first frame.
         LaunchStart.onActivityCreate(this)
         // 启动画面: the first activity of a cold start hands the system's launch window to Dart's.
-        LaunchScreen.onActivityCreate(this, coldDart = FlutterEngineCache.getInstance().get(ENGINE_ID) == null)
+        val coldDart = FlutterEngineCache.getInstance().get(ENGINE_ID) == null
+        LaunchScreen.onActivityCreate(this, coldDart = coldDart)
         // Recreated, or reopened from recents: the launch intent is an old notification tap or
         // link that was handled back then. Don't let the plugins route it again.
         if (savedInstanceState != null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) {
@@ -113,13 +117,28 @@ class MainActivity : FlutterActivity() {
         // (and launch screen) chosen now (Android 13+).
         LaunchThemeSync.sync(this)
         // 开屏动画: the bundled clip plays once on a cold start, then uncovers Flutter.
-        io.github.ccch1mneyyy.dsh_app.launch.SplashVideo.playIfColdStart(this, savedInstanceState == null)
+        val covered = io.github.ccch1mneyyy.dsh_app.launch.SplashVideo.playIfColdStart(this, coldDart && savedInstanceState == null) {
+            if (!wallpaperVisible || wallpaperChannel == null || isFinishing || isDestroyed) wallpaperPlayer.stop()
+            wallpaperPlayer.setSplashCovered(false)
+        }
+        wallpaperPlayer.setSplashCovered(covered)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         // Light / dark: a custom launch screen's plain splash colour (the page's) may change with it.
         LaunchThemeSync.sync(this)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        wallpaperVisible = true
+    }
+
+    override fun onStop() {
+        wallpaperVisible = false
+        wallpaperPlayer.stop()
+        super.onStop()
     }
 
     override fun onResume() {
@@ -197,9 +216,11 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // 背景视频: the clip is played into a texture, which Flutter draws behind the pages.
-        wallpaperChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/wallpaper-video")
-        wallpaperChannel!!.setMethodCallHandler { call, result ->
-            io.github.ccch1mneyyy.dsh_app.launch.WallpaperVideoHost.handle(this, flutterEngine, call, result)
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/wallpaper-video")
+        wallpaperChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            if (call.method == "start" && !wallpaperVisible) result.success(null)
+            else wallpaperPlayer.handle(this, flutterEngine, channel, call, result)
         }
         appChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dsh/app")
         appChannel!!.setMethodCallHandler { call, result ->
@@ -243,6 +264,7 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appChannel?.setMethodCallHandler(null)
         appChannel = null
+        wallpaperPlayer.stop()
         wallpaperChannel?.setMethodCallHandler(null)
         wallpaperChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
