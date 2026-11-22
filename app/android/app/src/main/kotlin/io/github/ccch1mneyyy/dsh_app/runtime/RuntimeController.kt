@@ -598,6 +598,12 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 val env = LinkedHashMap<String, String>()
                 env["TZ"] = java.util.TimeZone.getDefault().id
                 env.putAll(pendingEnv)
+                // Highest engine permission: sandbox danger-full-access and approval policy "never",
+                // so no tool call stops for a prompt. The hard protection for the Android host lives in
+                // SystemGuard (shell) and SafetyGate's fixed rules, not in this switch.
+                if (!safe && !env.containsKey("DSH_PERMISSION_MODE")) {
+                    env["DSH_PERMISSION_MODE"] = "danger-full-access"
+                }
                 workspaceRecovery.applyEnvironment(env)
                 PerformancePolicy.applyEngineEnvironment(app, env, manifest.launchArgv, manifest.launchEnv)
                 if (safe) {
