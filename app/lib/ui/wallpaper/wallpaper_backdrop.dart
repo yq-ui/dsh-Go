@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/wallpaper_state.dart';
+import '../../wallpaper/background_video.dart';
 import '../../wallpaper/custom_wallpaper.dart';
 import '../../wallpaper/wallpaper_look.dart';
 import '../../wallpaper/wallpaper_render.dart';
@@ -68,7 +69,18 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
   ThemeData? _guarded;
 
   @override
+  void initState() {
+    super.initState();
+    wallpaperVideo.addListener(_videoChanged);
+  }
+
+  void _videoChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    wallpaperVideo.removeListener(_videoChanged);
     _fade.dispose();
     _image?.dispose();
     _from?.dispose();
@@ -105,7 +117,10 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
   Widget build(BuildContext context) {
     final frame = WallpaperBackdrop.frameOf(context);
     final scene = widget.picture;
-    if (MediaQuery.maybeHighContrastOf(context) ?? false) {
+    final highContrast = MediaQuery.maybeHighContrastOf(context) ?? false;
+    // The moving backdrop stands in for the app's wallpaper, not for a page's own picture.
+    final video = wallpaperVideo.value && !widget.scene && !highContrast;
+    if (highContrast) {
       // The system's high contrast: the plain page.
       _take(null);
     } else if (widget.scene) {
@@ -115,6 +130,8 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
         final baked = ref.watch(sceneImageProvider((scene, frame)));
         if (!baked.isLoading) _take(baked.value);
       }
+    } else if (video) {
+      _take(null);
     } else {
       final baked = ref.watch(wallpaperImageProvider(frame));
       // While a new bake runs, the picture on screen stays.
@@ -129,9 +146,12 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
       _guarded = frame.look.guardTheme(theme);
     }
     // Always a Theme, so the page under it keeps its state when a wallpaper comes or goes.
+    final page = Theme(data: _image == null ? theme : _guarded!, child: widget.child);
     return AppBackdrop(
       picture: picture,
-      child: Theme(data: _image == null ? theme : _guarded!, child: widget.child),
+      // The moving backdrop is already behind everything (RootVideoBackdrop): stay see-through.
+      transparent: video,
+      child: page,
     );
   }
 }
