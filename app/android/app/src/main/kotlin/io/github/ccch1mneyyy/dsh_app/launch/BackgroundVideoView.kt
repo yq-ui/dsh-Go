@@ -40,8 +40,9 @@ class BackgroundVideoView(context: Context) : PlatformView, TextureView(context)
             }
             media.setSurface(Surface(texture))
             media.isLooping = true
-            // 音效: the clip's own track while it loops behind the pages.
-            media.setVolume(1f, 1f)
+            // Silent: a wallpaper loop that keeps its audio would play for hours and double up
+            // with the opening animation's sound at start-up. 音效 belongs to the splash.
+            media.setVolume(0f, 0f)
             media.setOnPreparedListener {
                 it.start()
                 fill(width, height)
