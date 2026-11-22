@@ -72,6 +72,7 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
   void initState() {
     super.initState();
     wallpaperVideo.addListener(_videoChanged);
+    wallpaperVideoRunning.addListener(_videoChanged);
   }
 
   void _videoChanged() {
@@ -81,6 +82,7 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
   @override
   void dispose() {
     wallpaperVideo.removeListener(_videoChanged);
+    wallpaperVideoRunning.removeListener(_videoChanged);
     _fade.dispose();
     _image?.dispose();
     _from?.dispose();
@@ -119,7 +121,9 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
     final scene = widget.picture;
     final highContrast = MediaQuery.maybeHighContrastOf(context) ?? false;
     // The moving backdrop stands in for the app's wallpaper, not for a page's own picture.
-    final video = wallpaperVideo.value && !widget.scene && !highContrast;
+    // Only a clip that is really playing takes the page's own backdrop away.
+    final video =
+        wallpaperVideo.value && wallpaperVideoRunning.value && !widget.scene && !highContrast;
     if (highContrast) {
       // The system's high contrast: the plain page.
       _take(null);
