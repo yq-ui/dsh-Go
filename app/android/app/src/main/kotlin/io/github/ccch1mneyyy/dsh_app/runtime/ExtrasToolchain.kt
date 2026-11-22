@@ -70,7 +70,9 @@ internal object ExtrasToolchain {
                 val code = connection.responseCode
                 if (code in 300..399) {
                     val location = connection.getHeaderField("Location") ?: throw IOException("redirect without location")
-                    current = URL(current, location)
+                    val next = URL(current, location)
+                    if (!next.protocol.equals("https", ignoreCase = true)) throw IOException("insecure redirect")
+                    current = next
                     continue
                 }
                 if (code != 200) throw IOException("http " + code)
@@ -101,7 +103,7 @@ internal object ExtrasToolchain {
     }
 
     private fun extract(archive: File, rootfs: File) {
-        val root = rootfs.canonicalPath
+        val root = rootfs.canonicalFile.toPath()
         var total = 0L
         ZipInputStream(archive.inputStream().buffered()).use { zip ->
             while (true) {
@@ -109,7 +111,8 @@ internal object ExtrasToolchain {
                 val name = entry.name
                 if (!SAFE.matches(name) || name.contains("..")) throw IOException("unsafe entry")
                 val target = File(rootfs, name)
-                if (!target.canonicalPath.startsWith(root)) throw IOException("unsafe entry")
+                val resolved = target.canonicalFile.toPath()
+                if (resolved == root || !resolved.startsWith(root)) throw IOException("unsafe entry")
                 if (entry.isDirectory) {
                     if (!target.isDirectory && !target.mkdirs()) throw IOException("cannot create directory")
                     zip.closeEntry()
