@@ -17,15 +17,19 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 6
+    private const val VERSION = 7
     private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
 
     /** Returns a one-line summary when something was written, null when already current. */
     fun install(context: Context, rootfs: File): String? {
+        // A fresh rootfs has no $DSH_HOME yet; DSH creates it on first boot. Create it here instead of
+        // bailing out, otherwise the first launch installs nothing and the next one never retries.
         val home = File(rootfs, "root/.dsh")
-        if (!home.isDirectory) return null
+        if (!home.isDirectory && !home.mkdirs() && !home.isDirectory) {
+            throw IOException("cannot create the DSH home")
+        }
         val skills = File(home, "skills")
         val stamp = File(home, ".dsh-go-builtin.json")
         if (current(stamp) && (skills.list()?.size ?: 0) >= 100) return null
@@ -117,11 +121,25 @@ internal object BuiltinContent {
             }
             var registered = 0
             if (entries.isNotEmpty()) registered = register(profile, entries)
+            // The profile package.json only exists after DSH has booted once; keep the stamp "pending"
+            // so the next launch registers the plugins instead of trusting a half-finished install.
+            val pending = entries.isNotEmpty() && !File(profile, "package.json").isFile
             File(home, ".dsh-go-builtin.json").writeText(
                 JSONObject().put("v", VERSION).put("skills", manifest.optJSONArray("skills")?.length() ?: 0)
                     .put("native", nativeCount).put("docs", docCount).put("trees", treeCount)
-                    .put("cordis", packages.size).put("bundles", registered).toString(),
+                    .put("cordis", packages.size).put("bundles", registered)
+                    .put("profile", if (pending) "pending" else "done").toString(),
             )
+            runCatching {
+                val report = File(home, "dsh-app/builtin-report.txt")
+                report.parentFile?.mkdirs()
+                report.writeText(
+                    "v=" + VERSION + "\nskills=" + skillCount + "\nnative=" + nativeCount +
+                        "\ncordis=" + packages.size + "\nbundles=" + registered +
+                        "\nprofile=" + (if (pending) "pending" else "done") +
+                        "\nprofileJson=" + File(profile, "package.json").isFile + "\n",
+                )
+            }
             return "skills " + skillCount + ", native " + nativeCount + ", docs " + docCount +
                 ", trees " + treeCount + ", cordis " + packages.size + ", bundles " + registered
         } finally {
@@ -130,7 +148,8 @@ internal object BuiltinContent {
     }
 
     private fun current(stamp: File): Boolean = try {
-        stamp.isFile && JSONObject(stamp.readText()).optInt("v") >= VERSION
+        val state = JSONObject(stamp.readText())
+        state.optInt("v") >= VERSION && state.optString("profile") != "pending"
     } catch (_: Exception) {
         false
     }
