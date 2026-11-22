@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,11 +7,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../launch/launch_state.dart';
 
 /// 背景视频: the moving backdrop, on by default in this build and switchable from the wallpaper
-/// settings. It is a platform view playing the clip shipped inside the APK, so nothing is read
-/// from the gallery and nothing is downloaded.
+/// settings. The clip ships inside the APK, so nothing is read from the gallery and nothing is
+/// downloaded.
 final ValueNotifier<bool> wallpaperVideo = ValueNotifier<bool>(true);
 
+/// True while the clip is really on screen. Pages keep their own backdrop until then, so a phone
+/// that cannot play the clip keeps its wallpaper picture instead of showing a hole.
+final ValueNotifier<bool> wallpaperVideoRunning = ValueNotifier<bool>(false);
+
 const String _prefsKey = 'wallpaper_video';
+const MethodChannel _channel = MethodChannel('dsh/wallpaper-video');
+
+/// The bundled clip's shape (res/raw/background.mp4): it is cropped to cover the screen.
+const double _clipAspect = 3840 / 2160;
 
 /// Reads the stored choice once at start-up (absent means on).
 Future<void> loadWallpaperVideoSetting() async {
@@ -23,8 +31,8 @@ Future<void> loadWallpaperVideoSetting() async {
   }
 }
 
-/// Puts the moving backdrop behind the whole app, once: the clip is decoded by a single view for
-/// every page, and pages that show it stay transparent instead of owning a player of their own.
+/// Puts the moving backdrop behind the whole app, once: one decoder for every page, and pages that
+/// show it stay transparent instead of owning a player of their own.
 class RootVideoBackdrop extends StatefulWidget {
   const RootVideoBackdrop({super.key, required this.child});
 
@@ -89,21 +97,68 @@ class _RootVideoBackdropState extends State<RootVideoBackdrop> with WidgetsBindi
 }
 
 /// The video layer itself, with a page-coloured veil so text keeps its contrast over the picture.
-class WallpaperVideoBackdrop extends StatelessWidget {
+///
+/// The clip plays into a Flutter texture rather than a platform view: the texture is part of
+/// Flutter's own scene, so the pages are always drawn over it. A platform view lives in the
+/// activity's view hierarchy and ended up on top of every page on this device.
+class WallpaperVideoBackdrop extends StatefulWidget {
   const WallpaperVideoBackdrop({super.key});
 
   @override
+  State<WallpaperVideoBackdrop> createState() => _WallpaperVideoBackdropState();
+}
+
+class _WallpaperVideoBackdropState extends State<WallpaperVideoBackdrop> {
+  int? _texture;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_start());
+  }
+
+  Future<void> _start() async {
+    try {
+      final id = await _channel.invokeMethod<int>('start');
+      if (!mounted || id == null) return;
+      setState(() => _texture = id);
+      wallpaperVideoRunning.value = true;
+    } catch (_) {
+      // No player: the wallpaper picture stays, which is the right thing to show.
+    }
+  }
+
+  @override
+  void dispose() {
+    wallpaperVideoRunning.value = false;
+    unawaited(_stop());
+    super.dispose();
+  }
+
+  Future<void> _stop() async {
+    try {
+      await _channel.invokeMethod<void>('stop');
+    } catch (_) {}
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!Platform.isAndroid) return const SizedBox.shrink();
+    final texture = _texture;
+    if (texture == null) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Stack(
       fit: StackFit.expand,
       children: [
-        IgnorePointer(
-          child: AndroidView(
-            viewType: 'dsh/background-video',
-            creationParamsCodec: const StandardMessageCodec(),
+        // Cover, not fit: black bars around a moving picture look broken.
+        ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _clipAspect * 1000,
+              height: 1000,
+              child: Texture(textureId: texture),
+            ),
           ),
         ),
         IgnorePointer(
