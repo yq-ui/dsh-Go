@@ -142,7 +142,7 @@ internal object BuiltinContent {
                     "v=" + VERSION +
                         "\nskills=" + (manifest.optJSONArray("skills")?.length() ?: 0) +
                         "\nskillsWritten=" + skillCount +
-                        "\nnative=" + nativeNames.size +
+                        "\nnative=" + (manifest.optJSONArray("native")?.length() ?: 0) +
                         "\nnativeWritten=" + nativeCount +
                         "\ncordis=" + packages.size +
                         "\nbundles=" + registered +
