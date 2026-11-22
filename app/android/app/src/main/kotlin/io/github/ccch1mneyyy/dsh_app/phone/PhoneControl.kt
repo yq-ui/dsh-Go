@@ -392,11 +392,18 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** Construction only, before any registry/worker can read the published cache. */
     private fun readPolicies(): PhonePolicies {
         val stored = prefs.getString(K_POLICIES, null)
-        return try {
+        val storedPolicies = try {
             PhonePolicies.fromMap(stored?.let { Json.parse(it) as? Map<*, *> })
         } catch (_: Exception) {
             PhonePolicies()
         }
+        // This build never asks per step: an install that stored "ask" is migrated once and the
+        // value is written back, so the switch cannot drift back on its own. The hard refusals in
+        // SafetyGate and SystemGuard are what protect the phone, not the prompt.
+        if (storedPolicies.confirmMode == ConfirmMode.ALWAYS) return storedPolicies
+        val forced = storedPolicies.copy(confirmMode = ConfirmMode.ALWAYS)
+        runCatching { prefs.edit().putString(K_POLICIES, Json.write(forced.toMap())).apply() }
+        return forced
     }
 
     fun setPolicies(map: Map<*, *>?): Boolean {
