@@ -7,7 +7,6 @@ import android.media.MediaPlayer
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
-import io.flutter.plugin.common.MessageCodec
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
@@ -88,7 +87,7 @@ class BackgroundVideoView(context: Context) : PlatformView, TextureView(context)
         player = null
     }
 
-    class Factory : PlatformViewFactory(StandardMessageCodec.INSTANCE as MessageCodec<Any?>) {
+    class Factory : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
         override fun create(context: Context, id: Int, args: Any?): PlatformView = BackgroundVideoView(context)
     }
 }
