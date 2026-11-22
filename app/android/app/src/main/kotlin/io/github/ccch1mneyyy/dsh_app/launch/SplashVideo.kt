@@ -32,7 +32,8 @@ internal object SplashVideo {
         val video = VideoView(activity)
         video.setVideoURI(Uri.parse("android.resource://" + activity.packageName + "/" + R.raw.splash))
         video.setOnPreparedListener { player: MediaPlayer ->
-            player.setVolume(0f, 0f)
+            // 音效: the clip's own track, unchanged from the export.
+            player.setVolume(1f, 1f)
             player.isLooping = false
             video.start()
         }
