@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 5
+    private const val VERSION = 6
     private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
@@ -41,9 +41,11 @@ internal object BuiltinContent {
                 if (applyDir(File(staging, "skills/$name"), File(skills, name), managed = false)) skillCount++
             }
             val pluginRoot = File(rootfs, "opt/dsh-app/builtin/plugins")
+            val entries = ArrayList<Pair<String, String>>()
             var nativeCount = 0
             for (name in strings(manifest.optJSONArray("native"))) {
                 if (applyDir(File(staging, "native/$name"), File(home, "dsh-go/plugins/$name"), managed = true)) nativeCount++
+                entries += name to "/root/.dsh/dsh-go/plugins/" + name
             }
             var docCount = 0
             val docs = File(home, "dsh-app/builtin-docs")
@@ -111,9 +113,10 @@ internal object BuiltinContent {
                 applyDir(source, File(pluginRoot, dir), managed = true)
                 if (profile.isDirectory) applyDir(source, File(modules, name), managed = true)
                 packages += name
+                entries += name to "/opt/dsh-app/builtin/plugins/" + dir
             }
             var registered = 0
-            if (packages.isNotEmpty()) registered = register(profile, packages)
+            if (entries.isNotEmpty()) registered = register(profile, entries)
             File(home, ".dsh-go-builtin.json").writeText(
                 JSONObject().put("v", VERSION).put("skills", manifest.optJSONArray("skills")?.length() ?: 0)
                     .put("native", nativeCount).put("docs", docCount).put("trees", treeCount)
@@ -215,19 +218,28 @@ internal object BuiltinContent {
         }
     }
 
-    /** Adds the baked bundles to the web profile bundle list, keeping the user's order. */
-    private fun register(profile: File, packages: List<String>): Int {
+    /**
+     * A plugin shows up under Settings > Plugins because the profile DEPENDS on it: the bundle list
+     * only decides what loads. Both are written here, with a link: dependency pointing at the
+     * baked directory, which is what a local plugin install looks like.
+     */
+    private fun register(profile: File, entries: List<Pair<String, String>>): Int {
         val file = File(profile, "package.json")
         if (!file.isFile) return 0
         return try {
             val root = JSONObject(file.readText())
+            val dependencies = root.optJSONObject("dependencies") ?: JSONObject().also { root.put("dependencies", it) }
             val dsh = root.optJSONObject("dsh") ?: JSONObject().also { root.put("dsh", it) }
             val section = dsh.optJSONObject("profile") ?: JSONObject().also { dsh.put("profile", it) }
             val bundles = section.optJSONArray("bundles") ?: JSONArray().also { section.put("bundles", it) }
             val have = HashSet<String>()
             for (i in 0 until bundles.length()) bundles.optString(i).takeIf { it.isNotEmpty() }?.let(have::add)
             var added = 0
-            for (name in packages) {
+            for ((name, guestPath) in entries) {
+                if (!dependencies.has(name)) {
+                    dependencies.put(name, "link:" + guestPath)
+                    added++
+                }
                 if (!have.contains(name)) {
                     bundles.put(name)
                     have += name
