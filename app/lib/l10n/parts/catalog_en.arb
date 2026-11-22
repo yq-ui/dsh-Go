@@ -106,5 +106,7 @@
   "diagnosticsForAi": "Let the AI read diagnostics",
   "diagnosticsForAiHint": "Write the snapshot where the engine can read it",
   "diagnosticsForAiDone": "Written — ask the AI to \"check the diagnostics\"",
-  "diagnosticsForAiFailed": "Not written: the local runtime is not installed"
+  "diagnosticsForAiFailed": "Not written: the local runtime is not installed",
+  "catalogDevTools": "Developer tools",
+  "catalogDevToolsSummary": "Git status, commit and log (JGit)"
 }
