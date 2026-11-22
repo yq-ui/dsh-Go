@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 8
+    private const val VERSION = 9
     private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
     // Entry names are not restricted to ASCII: skills ship Chinese file names (拆文库、类型卡…).
@@ -47,10 +47,15 @@ internal object BuiltinContent {
                 if (applyDir(File(staging, "skills/$name"), File(skills, name), managed = false)) skillCount++
             }
             val pluginRoot = File(rootfs, "opt/dsh-app/builtin/plugins")
+            val profile = File(home, "profiles/web")
+            val modules = File(profile, "node_modules")
             val entries = ArrayList<Pair<String, String>>()
             var nativeCount = 0
             for (name in strings(manifest.optJSONArray("native"))) {
-                if (applyDir(File(staging, "native/$name"), File(home, "dsh-go/plugins/$name"), managed = true)) nativeCount++
+                val source = File(staging, "native/$name")
+                if (applyDir(source, File(home, "dsh-go/plugins/$name"), managed = true)) nativeCount++
+                // A bundle resolves from the profile node_modules, like a real dsh plugin add.
+                if (profile.isDirectory) applyDir(source, File(modules, name), managed = true)
                 entries += name to "/root/.dsh/dsh-go/plugins/" + name
             }
             var docCount = 0
@@ -107,8 +112,6 @@ internal object BuiltinContent {
                 runCatching { File(rootfs, path).setExecutable(true, false) }
             }
             val cordis = manifest.optJSONArray("cordis") ?: JSONArray()
-            val profile = File(home, "profiles/web")
-            val modules = File(profile, "node_modules")
             val packages = ArrayList<String>()
             for (i in 0 until cordis.length()) {
                 val entry = cordis.optJSONObject(i) ?: continue
@@ -136,8 +139,13 @@ internal object BuiltinContent {
                 val report = File(home, "dsh-app/builtin-report.txt")
                 report.parentFile?.mkdirs()
                 report.writeText(
-                    "v=" + VERSION + "\nskills=" + skillCount + "\nnative=" + nativeCount +
-                        "\ncordis=" + packages.size + "\nbundles=" + registered +
+                    "v=" + VERSION +
+                        "\nskills=" + (manifest.optJSONArray("skills")?.length() ?: 0) +
+                        "\nskillsWritten=" + skillCount +
+                        "\nnative=" + nativeNames.size +
+                        "\nnativeWritten=" + nativeCount +
+                        "\ncordis=" + packages.size +
+                        "\nbundles=" + registered +
                         "\nprofile=" + (if (pending) "pending" else "done") +
                         "\nprofileJson=" + File(profile, "package.json").isFile + "\n",
                 )
