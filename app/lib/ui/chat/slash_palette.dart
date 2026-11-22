@@ -313,6 +313,7 @@ IconData slashIcon(SlashCommand command) =>
 IconData slashIconFor(String name) => switch (name) {
   'new' => AppIcons.newChat,
   'model' => AppIcons.model,
+  'skills' => AppIcons.skill,
   'compact' => AppIcons.compact,
   'permission' => AppIcons.permissions,
   'plan' => AppIcons.plan,
