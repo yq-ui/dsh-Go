@@ -1,13 +1,28 @@
+import 'dart:async';
+
 import 'package:dsh_app/state/features_state.dart';
+import 'package:dsh_app/state/sessions_state.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/composer.dart';
 import 'package:dsh_app/ui/chat/slash_palette.dart';
+import 'package:dsh_app/ui/features/skill_use.dart';
 import 'package:dsh_app/ui/theme/app_icons.dart';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/harness.dart';
+
+class _DelayedSessions extends FakeSessions {
+  final result = Completer<String>();
+
+  @override
+  Future<String> create({bool autoApprove = true}) {
+    creates++;
+    return result.future;
+  }
+}
 
 void main() {
   setUpAll(loadTestFonts);
@@ -81,6 +96,71 @@ void main() {
     expect(harness.controllers['s1']!.commandLines, ['/permission read-only']);
     expect(harness.controllers['s1']!.sent, isEmpty);
   });
+
+  testWidgets('a fresh draft picks from the session catalog and only sends on confirmation', (tester) async {
+    final ids = <String>[];
+    final harness = ChatHarness(extra: [
+      skillsProvider.overrideWith((ref, id) async {
+        ids.add(id);
+        return const [SkillInfo(name: 'dsh-go-guide', description: 'App guide')];
+      }),
+    ]);
+    usePhoneView(tester);
+    mockClipboard(tester);
+    await tester.pumpWidget(testApp(const ChatScreen(), overrides: harness.overrides));
+    await pumpFrames(tester, 8);
+    await enter(tester, '/');
+    expect(harness.sessions.creates, 0);
+    await tester.tap(row('skills'));
+    await pumpFrames(tester, 12);
+    expect(harness.sessions.creates, 1);
+    expect(ids, contains('new-session'));
+    await tester.tap(find.text('/dsh-go-guide'));
+    await pumpFrames(tester, 4);
+    await tester.tap(find.text(SkillUseActions.hereLabel));
+    await pumpFrames(tester, 8);
+    expect(input(tester).text, '/dsh-go-guide ');
+    expect(harness.controllers.values.expand((c) => c.sent), isEmpty);
+    await tester.tap(find.byIcon(AppIcons.send));
+    await pumpFrames(tester, 4);
+    expect(harness.sessions.creates, 1);
+    expect(harness.controllers['new-session']!.sent, ['/dsh-go-guide']);
+    expect(harness.controllers['new-session']!.commandLines, isEmpty);
+  });
+
+  for (final cover in [false, true]) {
+    testWidgets('a pending skills picker leaves an edited or covered new chat alone (cover: $cover)', (tester) async {
+      final delayed = _DelayedSessions();
+      final harness = ChatHarness();
+      usePhoneView(tester);
+      mockClipboard(tester);
+      await tester.pumpWidget(testApp(const ChatScreen(), overrides: [
+        for (final override in harness.overrides)
+          if (override.origin != sessionsProvider) override,
+        sessionsProvider.overrideWith(() => delayed),
+      ]));
+      await pumpFrames(tester, 8);
+      final context = tester.element(find.byType(ChatScreen));
+      final container = ProviderScope.containerOf(context);
+      final controller = input(tester);
+      await enter(tester, '/skills');
+      await tester.tap(row('skills'));
+      await tester.pump();
+      expect(delayed.creates, 1);
+      if (cover) {
+        unawaited(Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => const SizedBox())));
+      } else {
+        controller.text = 'still editing';
+      }
+      delayed.result.complete('late-session');
+      await pumpFrames(tester, 8);
+      expect(container.read(currentSessionProvider), isNull);
+      expect(controller.text, cover ? '/skills' : 'still editing');
+      expect(harness.controllers.values.expand((c) => c.sent), isEmpty);
+      if (cover) Navigator.of(context).pop();
+      await pumpFrames(tester, 4);
+    });
+  }
 
   testWidgets('a skill describes insertion and is sent as a message', (tester) async {
     final harness = await mount(tester);
