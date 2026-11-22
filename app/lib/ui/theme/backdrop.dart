@@ -26,7 +26,13 @@ import 'surfaces.dart';
 /// 给了 [picture](自定义壁纸,lib/ui/wallpaper/wallpaper_backdrop.dart)就画那张
 /// 预先烘好的图,不画渐变;子树里的 [BackdropVeil] 跟着画同一张图。
 class AppBackdrop extends StatelessWidget {
-  const AppBackdrop({super.key, required this.child, this.glow = true, this.picture});
+  const AppBackdrop({
+    super.key,
+    required this.child,
+    this.glow = true,
+    this.picture,
+    this.transparent = false,
+  });
 
   final Widget child;
 
@@ -36,29 +42,36 @@ class AppBackdrop extends StatelessWidget {
   /// A picture in place of the gradient; null: the gradient.
   final BackdropPicture? picture;
 
+  /// Paints nothing: the app's own moving backdrop (背景视频) is already behind this page, put
+  /// there once by [RootVideoBackdrop]. The [BackdropVeil]s then draw no band either — a gradient
+  /// strip over a moving picture reads as a tear.
+  final bool transparent;
+
   @override
   Widget build(BuildContext context) {
     final s = DshSurfaces.of(context);
     return _BackdropScope(
       picture: picture,
+      video: transparent,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: RepaintBoundary(
-                child: CustomPaint(
-                  painter: _BackdropPainter(
-                    top: s.backdropTop,
-                    bottom: s.backdropBottom,
-                    glowPrimary: glow ? s.glowPrimary : null,
-                    glowSecondary: glow ? s.glowSecondary : null,
-                    picture: picture,
+          if (!transparent)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _BackdropPainter(
+                      top: s.backdropTop,
+                      bottom: s.backdropBottom,
+                      glowPrimary: glow ? s.glowPrimary : null,
+                      glowSecondary: glow ? s.glowSecondary : null,
+                      picture: picture,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           Material(type: MaterialType.transparency, child: child),
         ],
       ),
@@ -88,15 +101,21 @@ class BackdropPicture {
 
 /// The picture of the nearest [AppBackdrop], for the [BackdropVeil]s over it.
 class _BackdropScope extends InheritedWidget {
-  const _BackdropScope({required this.picture, required super.child});
+  const _BackdropScope({required this.picture, this.video = false, required super.child});
 
   final BackdropPicture? picture;
+
+  /// The backdrop is a moving picture under the page, not the gradient.
+  final bool video;
 
   static BackdropPicture? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_BackdropScope>()?.picture;
 
+  static bool videoOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_BackdropScope>()?.video ?? false;
+
   @override
-  bool updateShouldNotify(_BackdropScope old) => old.picture != picture;
+  bool updateShouldNotify(_BackdropScope old) => old.picture != picture || old.video != video;
 }
 
 /// [AppBackdrop] 的一角:同一张背景,只画底部 [solidHeight] + [feather] 这一条,
@@ -132,6 +151,7 @@ class BackdropVeil extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_BackdropScope.videoOf(context)) return const SizedBox.shrink();
     final s = DshSurfaces.of(context);
     final frame = BackdropFrame.maybeOf(context);
     return IgnorePointer(
