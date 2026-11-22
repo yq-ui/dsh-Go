@@ -43,96 +43,67 @@ class RootVideoBackdrop extends StatefulWidget {
 }
 
 class _RootVideoBackdropState extends State<RootVideoBackdrop> with WidgetsBindingObserver {
-  /// False while the app is in the background: the player is released instead of decoding a clip
-  /// nobody can see.
-  bool _foreground = true;
-
-  /// False while the opening animation still covers the app: a 4K clip has no business taking
-  /// decoder and CPU time from the engine boot that happens behind it.
-  bool _launched = LaunchController.active.value == null;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    LaunchController.active.addListener(_launchChanged);
-  }
-
-  @override
-  void dispose() {
-    LaunchController.active.removeListener(_launchChanged);
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  void _launchChanged() {
-    final launched = LaunchController.active.value == null;
-    if (launched != _launched) setState(() => _launched = launched);
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // inactive still shows the page (a dialog, the shade being pulled): keep the clip running there.
-    final foreground = state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
-    if (foreground != _foreground) setState(() => _foreground = foreground);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: wallpaperVideo,
-      builder: (context, on, _) {
-        final show =
-            on && _foreground && _launched && !(MediaQuery.maybeHighContrastOf(context) ?? false);
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            if (show) const WallpaperVideoBackdrop() else const SizedBox.shrink(),
-            widget.child,
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// The video layer itself, with a page-coloured veil so text keeps its contrast over the picture.
-///
-/// The clip plays into a Flutter texture rather than a platform view: the texture is part of
-/// Flutter's own scene, so the pages are always drawn over it. A platform view lives in the
-/// activity's view hierarchy and ended up on top of every page on this device.
-class WallpaperVideoBackdrop extends StatefulWidget {
-  const WallpaperVideoBackdrop({super.key});
-
-  @override
-  State<WallpaperVideoBackdrop> createState() => _WallpaperVideoBackdropState();
-}
-
-class _WallpaperVideoBackdropState extends State<WallpaperVideoBackdrop> {
+  static int _nextRequest = 0;
+  bool _allowMotion = false;
+  int? _request;
   int? _texture;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_start());
-  }
-
-  Future<void> _start() async {
-    try {
-      final id = await _channel.invokeMethod<int>('start');
-      if (!mounted || id == null) return;
-      setState(() => _texture = id);
-      wallpaperVideoRunning.value = true;
-    } catch (_) {
-      // No player: the wallpaper picture stays, which is the right thing to show.
-    }
+    WidgetsBinding.instance.addObserver(this);
+    wallpaperVideo.addListener(_sync);
+    LaunchController.active.addListener(_sync);
+    _channel.setMethodCallHandler(_nativeEvent);
   }
 
   @override
-  void dispose() {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final highContrast = MediaQuery.maybeHighContrastOf(context) ?? false;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    _allowMotion = !highContrast && !reduceMotion;
+    _sync();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _sync();
+
+  void _sync() {
+    final state = WidgetsBinding.instance.lifecycleState;
+    final visible = state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
+    final wanted = visible && _allowMotion && wallpaperVideo.value && LaunchController.active.value == null;
+    if (wanted == (_request != null)) return;
+    if (wanted) {
+      final request = ++_nextRequest;
+      _request = request;
+      unawaited(_start(request));
+    } else {
+      _request = null;
+      _clearTexture();
+      // A paused app may not draw another frame; don't defer release to a widget rebuild.
+      unawaited(_stop());
+    }
+  }
+
+  Future<void> _start(int request) async {
+    try {
+      final id = await _channel.invokeMethod<int>('start', request);
+      if (!mounted || request != _request || id == null) return;
+      setState(() => _texture = id);
+      wallpaperVideoRunning.value = true;
+    } catch (_) {
+      // Missing player or unsupported clip: keep the static wallpaper.
+    }
+  }
+
+  Future<void> _nativeEvent(MethodCall call) async {
+    if (mounted && call.method == 'ended' && call.arguments == _request) _clearTexture();
+  }
+
+  void _clearTexture() {
+    if (_texture != null) setState(() => _texture = null);
     wallpaperVideoRunning.value = false;
-    unawaited(_stop());
-    super.dispose();
   }
 
   Future<void> _stop() async {
@@ -142,9 +113,34 @@ class _WallpaperVideoBackdropState extends State<WallpaperVideoBackdrop> {
   }
 
   @override
+  void dispose() {
+    wallpaperVideo.removeListener(_sync);
+    LaunchController.active.removeListener(_sync);
+    WidgetsBinding.instance.removeObserver(this);
+    _channel.setMethodCallHandler(null);
+    if (_request != null) unawaited(_stop());
+    _request = null;
+    wallpaperVideoRunning.value = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      if (_texture case final int id) _VideoLayer(texture: id) else const SizedBox.shrink(),
+      widget.child,
+    ],
+  );
+}
+
+class _VideoLayer extends StatelessWidget {
+  const _VideoLayer({required this.texture});
+
+  final int texture;
+
+  @override
   Widget build(BuildContext context) {
-    final texture = _texture;
-    if (texture == null) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Stack(
