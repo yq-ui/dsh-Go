@@ -16,7 +16,6 @@ import '../common/list_page_row.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
-import 'feature_kit.dart';
 import 'feature_widgets.dart';
 import 'skill_use.dart';
 
@@ -32,34 +31,56 @@ class SkillsPage extends ConsumerWidget {
     final connected = ref.watch(activeConnectionProvider).value != null;
     final skills = ref.watch(skillsProvider(sessionId));
     final list = skills.value;
+    if (connected && list != null && list.isNotEmpty && !skills.hasError) {
+      return AppPage(
+        title: l10n.featuresSkills,
+        subtitle: Text(l10n.featuresSkillsCallHint),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: DecoratedSliver(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: AppShape.radiusLg,
+              ),
+              sliver: SliverPadding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                sliver: SliverList.builder(
+                  itemCount: list.length,
+                  itemBuilder: (context, index) {
+                    final skill = list[index];
+                    return Material(
+                      key: ValueKey(skill.name),
+                      type: MaterialType.transparency,
+                      child: _SkillRow(skill: skill, onTap: () => _show(context, skill)),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(child: FeatureNote(l10n.featuresSkillsSourceHint)),
+        ],
+      );
+    }
+    void retry() => ref.invalidate(skillsProvider(sessionId));
     return AppPage.list(
       title: l10n.featuresSkills,
       subtitle: Text(l10n.featuresSkillsCallHint),
       children: [
         if (!connected)
           const FeatureOffline()
-        else if (list == null && skills.hasError)
-          FeatureMessage.error(
-            title: l10n.featuresSkillsReadFailed,
-            error: skills.error!,
-            onRetry: () => ref.invalidate(skillsProvider(sessionId)),
-          )
-        else if (list == null)
+        else if (skills.hasError)
+          FeatureMessage.error(title: l10n.featuresSkillsReadFailed, error: skills.error!, onRetry: retry)
+        else if (list == null || skills.isLoading)
           const FeatureLoading()
-        else if (list.isEmpty)
-          FeatureMessage(icon: AppIcons.skill, title: l10n.featuresSkillsEmpty, body: l10n.featuresSkillsEmptyHint)
-        else ...[
-          ListPageCard(
-            children: [
-              for (final (i, skill) in list.indexed)
-                FadeSlideIn(
-                  index: i,
-                  child: _SkillRow(skill: skill, onTap: () => _show(context, skill)),
-                ),
-            ],
+        else
+          FeatureMessage(
+            icon: AppIcons.skill,
+            title: l10n.featuresSkillsEmpty,
+            body: l10n.featuresSkillsEmptyHint,
+            action: (l10n.commonRetry, retry),
           ),
-          FeatureNote(l10n.featuresSkillsSourceHint),
-        ],
       ],
     );
   }
@@ -71,37 +92,39 @@ class SkillsPage extends ConsumerWidget {
       final colors = DshColors.of(sheet);
       return SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SheetHeader('/${skill.name}'),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (skill.description.isNotEmpty)
-                    Text(skill.description, style: theme.textTheme.bodyMedium?.copyWith(height: 1.6)),
-                  if (skill.whenToUse case final usage? when usage.trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      context.l10n.featuresSkillUsage(usage.trim()),
-                      style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-                    ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetHeader('/${skill.name}'),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (skill.description.isNotEmpty)
+                      Text(skill.description, style: theme.textTheme.bodyMedium?.copyWith(height: 1.6)),
+                    if (skill.whenToUse case final usage? when usage.trim().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        context.l10n.featuresSkillUsage(usage.trim()),
+                        style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+                      ),
+                    ],
+                    if (skill.path case final path?) ...[
+                      const SizedBox(height: 10),
+                      Text(path, style: AppType.monoLabel(color: colors.textTertiary)),
+                    ],
                   ],
-                  if (skill.path case final path?) ...[
-                    const SizedBox(height: 10),
-                    Text(path, style: AppType.monoLabel(color: colors.textTertiary)),
-                  ],
-                ],
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(kSheetGutter, 16, kSheetGutter, 12),
-              child: SkillUseActions(skill: skill, sessionId: sessionId),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(kSheetGutter, 16, kSheetGutter, 12),
+                child: SkillUseActions(skill: skill, sessionId: sessionId),
+              ),
+            ],
+          ),
         ),
       );
     },
