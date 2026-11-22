@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../launch/launch_state.dart';
+
 /// 背景视频: the moving backdrop, on by default in this build and switchable from the wallpaper
 /// settings. It is a platform view playing the clip shipped inside the APK, so nothing is read
 /// from the gallery and nothing is downloaded.
@@ -37,16 +39,27 @@ class _RootVideoBackdropState extends State<RootVideoBackdrop> with WidgetsBindi
   /// nobody can see.
   bool _foreground = true;
 
+  /// False while the opening animation still covers the app: a 4K clip has no business taking
+  /// decoder and CPU time from the engine boot that happens behind it.
+  bool _launched = LaunchController.active.value == null;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    LaunchController.active.addListener(_launchChanged);
   }
 
   @override
   void dispose() {
+    LaunchController.active.removeListener(_launchChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _launchChanged() {
+    final launched = LaunchController.active.value == null;
+    if (launched != _launched) setState(() => _launched = launched);
   }
 
   @override
@@ -61,7 +74,8 @@ class _RootVideoBackdropState extends State<RootVideoBackdrop> with WidgetsBindi
     return ValueListenableBuilder<bool>(
       valueListenable: wallpaperVideo,
       builder: (context, on, _) {
-        final show = on && _foreground && !(MediaQuery.maybeHighContrastOf(context) ?? false);
+        final show =
+            on && _foreground && _launched && !(MediaQuery.maybeHighContrastOf(context) ?? false);
         return Stack(
           fit: StackFit.expand,
           children: [
