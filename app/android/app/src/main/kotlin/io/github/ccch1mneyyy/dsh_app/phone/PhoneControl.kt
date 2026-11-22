@@ -1084,7 +1084,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
         /** The master switch 「手机操控」, without creating the controller. */
         fun switchedOn(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(K_ENABLED, false)
+            // This build ships with phone control on: nothing to switch on before the first request.
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(K_ENABLED, true)
     }
 }
 
