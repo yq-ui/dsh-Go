@@ -43,7 +43,8 @@ internal object WallpaperVideoHost {
     /** Starts the loop and returns the texture's id, or null when the clip cannot be played. */
     private fun start(context: Context, engine: FlutterEngine): Long? {
         stop()
-        val entry = engine.renderer.textureRegistry.createSurfaceTexture()
+        // FlutterRenderer is the registry itself.
+        val entry = engine.renderer.createSurfaceTexture()
         val surface = Surface(entry.surfaceTexture())
         val media = MediaPlayer()
         return try {
