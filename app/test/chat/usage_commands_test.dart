@@ -80,6 +80,7 @@ void main() {
       expect(withPlugin.map((c) => c.name), [
         'new',
         'model',
+        'skills',
         'compact',
         'permission',
         'plan',
@@ -99,6 +100,15 @@ void main() {
       expect(names('cpt'), ['compact']);
       expect(names('MOD'), ['model']);
       expect(names('zzz'), isEmpty);
+    });
+
+    test('fresh chat has a skill picker before a host catalog exists', () {
+      final items = mergeSlashCommands(const []);
+      final bare = PaletteContent.of(items, '/') as PaletteMatches;
+      expect(bare.commands.take(4).map((c) => c.name), contains('skills'));
+      final picker = filterSlashCommands(items, 'skill').first;
+      expect(picker.kind, SlashCommandKind.app);
+      expect(slashPickInsertsText(picker, hasSuffix: false), isFalse);
     });
 
     test('parse and resolve a command line', () {
