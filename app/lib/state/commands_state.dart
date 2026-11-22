@@ -64,6 +64,12 @@ List<SlashCommand> appSlashCommands({bool harmony = false}) => [
     kind: SlashCommandKind.app,
   ),
   SlashCommand(
+    name: 'skills',
+    label: appL10n.featuresSkills,
+    description: appL10n.featuresSkillsCallHint,
+    kind: SlashCommandKind.app,
+  ),
+  SlashCommand(
     name: 'export',
     label: appL10n.stateCommandExportLabel,
     description: harmony
@@ -123,7 +129,7 @@ const _hiddenCommands = {'export'};
 
 /// Palette order: app commands, then the first-party ones in this order,
 /// then anything else in catalog order.
-const _order = ['new', 'model', 'compact', 'permission', 'plan', 'goal', 'feedback', 'export', 'features'];
+const _order = ['new', 'model', 'skills', 'compact', 'permission', 'plan', 'goal', 'feedback', 'export', 'features'];
 
 /// Parses one `CommandDescriptor` (`commands/list` item); null when unusable.
 SlashCommand? slashCommandFromJson(Object? json) {
