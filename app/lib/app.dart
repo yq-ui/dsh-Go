@@ -206,16 +206,19 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
           child: AppMotionScope(
             fluid: fluid,
             child: ThemeRevealHost(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  LaunchUnder(
-                    child: Platform.operatingSystem == 'ohos'
-                        ? EasedKeyboardInset(child: MirroredSideInsets(child: child!))
-                        : MirroredSideInsets(child: child!),
-                  ),
-                  const LaunchLayer(),
-                ],
+              // 背景视频 sits behind every page: one decoder for the app, not one per page.
+              child: RootVideoBackdrop(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    LaunchUnder(
+                      child: Platform.operatingSystem == 'ohos'
+                          ? EasedKeyboardInset(child: MirroredSideInsets(child: child!))
+                          : MirroredSideInsets(child: child!),
+                    ),
+                    const LaunchLayer(),
+                  ],
+                ),
               ),
             ),
           ),
