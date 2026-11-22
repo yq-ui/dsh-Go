@@ -11,6 +11,7 @@ import 'diagnostics/app_error_log.dart';
 import 'launch/launch_state.dart';
 import 'links/page_links.dart' show registerPageLink, tavernPageLink;
 import 'runtime/local_paths.dart';
+import 'wallpaper/default_wallpaper.dart';
 import 'state/locale_state.dart';
 import 'ui/common/third_party_licenses.dart';
 import 'ui/fx/metal/metal_shader.dart';
@@ -28,6 +29,8 @@ Future<void> _startApp() async {
   // The first frame is already in the chosen language (设置 → 语言), and is the launch
   // window's own picture (启动画面, lib/launch/launch_state.dart).
   await Future.wait([AppLanguageController.load(), LaunchController.begin(), LocalPaths.load()]);
+  // 默认壁纸: the bundled picture becomes the backdrop unless the person already chose one.
+  unawaited(ensureDefaultWallpaper());
   // MIT / OFL notices must ship with the APK, not just the sources.
   registerThirdPartyLicenses();
   registerFontLicenses();
