@@ -51,7 +51,8 @@ class _RootVideoBackdropState extends State<RootVideoBackdrop> with WidgetsBindi
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final foreground = state == AppLifecycleState.resumed;
+    // inactive still shows the page (a dialog, the shade being pulled): keep the clip running there.
+    final foreground = state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
     if (foreground != _foreground) setState(() => _foreground = foreground);
   }
 
@@ -85,10 +86,10 @@ class WallpaperVideoBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const IgnorePointer(
+        IgnorePointer(
           child: AndroidView(
             viewType: 'dsh/background-video',
-            creationParamsCodec: StandardMessageCodec(),
+            creationParamsCodec: const StandardMessageCodec(),
           ),
         ),
         IgnorePointer(
