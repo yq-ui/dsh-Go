@@ -17,10 +17,12 @@ import java.util.zip.ZipInputStream
  */
 internal object BuiltinContent {
     private const val ASSET = "flutter_assets/assets/builtin/builtin.zip"
-    private const val VERSION = 7
+    private const val VERSION = 8
     private const val MAX_TOTAL = 1024L * 1024 * 1024
     private const val MAX_ENTRIES = 40_000
-    private val SAFE = Regex("^[A-Za-z0-9@._+-][A-Za-z0-9@._+/-]*$")
+    // Entry names are not restricted to ASCII: skills ship Chinese file names (拆文库、类型卡…).
+    // Safety comes from the canonical-path check below, not from a character whitelist.
+    private val UNSAFE = Regex("(^/)|(^[A-Za-z]:)|(\\.\\.)")
 
     /** Returns a one-line summary when something was written, null when already current. */
     fun install(context: Context, rootfs: File): String? {
@@ -170,11 +172,11 @@ internal object BuiltinContent {
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     if (++entries > MAX_ENTRIES) throw IOException("builtin content has too many entries")
-                    val name = entry.name
+                    val name = entry.name.replace('\\', '/')
                     val target = File(staging, name)
-                    if (!SAFE.matches(name) || name.contains("..") || !target.canonicalPath.startsWith(root)) {
-                        throw IOException("unsafe builtin entry")
-                    }
+                    val canonical = target.canonicalPath
+                    val inside = canonical == root || canonical.startsWith(root + File.separator)
+                    if (UNSAFE.containsMatchIn(name) || !inside) throw IOException("unsafe builtin entry")
                     if (entry.isDirectory) {
                         if (!target.isDirectory && !target.mkdirs()) throw IOException("cannot create builtin directory")
                         continue
