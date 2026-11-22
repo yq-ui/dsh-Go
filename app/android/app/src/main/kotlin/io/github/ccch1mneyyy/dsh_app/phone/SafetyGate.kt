@@ -8,7 +8,9 @@ package io.github.ccch1mneyyy.dsh_app.phone
 data class PhonePolicies(
     val denyPackages: List<String> = SafetyRules.DEFAULT_DENY,
     val confirmEveryWritePackages: List<String> = SafetyRules.DEFAULT_CONFIRM_EVERY_WRITE,
-    val confirmMode: ConfirmMode = ConfirmMode.ASK,
+    // This build ships with confirmations off: the person asked for no per-step prompts. The hard
+    // rules below (and SystemGuard for the Android host) are what protect the device instead.
+    val confirmMode: ConfirmMode = ConfirmMode.ALWAYS,
     val unlocks: PhoneUnlocks = PhoneUnlocks(),
     /** 始终允许: the master switch for [alwaysAllowPackages]. Off by default. */
     val alwaysAllowEnabled: Boolean = false,
